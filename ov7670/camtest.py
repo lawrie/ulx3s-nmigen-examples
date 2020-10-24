@@ -4,8 +4,9 @@ from nmigen import *
 from nmigen.build import *
 from nmigen_boards.ulx3s import *
 
-from  camread import *
-from  st7789 import *
+from camread import *
+from st7789 import *
+from camconfig import *
 
 # The OLED pins are not defined in the ULX3S platform in nmigen_boards.
 oled_resource = [
@@ -19,7 +20,7 @@ oled_resource = [
 ov7670_pmod = [
     Resource("ov7670", 0,
              Subsignal("cam_data", Pins("10+ 10- 9+ 9- 8+ 8- 7+ 7-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
-             Subsignal("cam_SIOD", Pins("0+", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("cam_SIOD", Pins("0+", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
              Subsignal("cam_SIOC", Pins("0-", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
              Subsignal("cam_HREF", Pins("1+", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
              Subsignal("cam_VSYNC", Pins("1-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
@@ -34,6 +35,7 @@ class CamTest(Elaboratable):
         clk25 = platform.request("clk25")
         led = [platform.request("led", i) for i in range(8)]
         ov7670 = platform.request("ov7670")
+        btn1 = platform.request("button_fire", 0)
 
         m = Module()
         
@@ -56,10 +58,15 @@ class CamTest(Elaboratable):
         oled_resn = platform.request("oled_resn")
         oled_csn  = platform.request("oled_csn")
 
-        buffer = Memory(width=16, depth=240 * 240)
+        # Frame buffer
+        buffer = Memory(width=16, depth=(240 * 240))
         m.submodules.r = r = buffer.read_port()
         m.submodules.w = w = buffer.write_port()
         
+        # Camera config
+        camconfig = CamConfig()
+        m.submodules.camconfig = camconfig
+
         m.d.comb += [
             oled_clk .eq(st7789.spi_clk),
             oled_mosi.eq(st7789.spi_mosi),
@@ -73,16 +80,20 @@ class CamTest(Elaboratable):
             camread.href.eq(ov7670.cam_HREF),
             camread.vsync.eq(ov7670.cam_VSYNC),
             camread.p_clock.eq(ov7670.cam_PCLK),
-            w.en.eq(camread.pixel_valid & (camread.col[1:] >= 40) & (camread.col[1:] < 280)),
-            w.addr.eq((camread.row[1:] * 240) + camread.col[1:] - 40),
+            w.en.eq(camread.pixel_valid & (camread.col[1:] < 240)),
+            w.addr.eq((camread.row[1:] * 240) + camread.col[1:]),
             w.data.eq(camread.pixel_data),
             #r.en.eq(st7789.next_pixel),
-            r.addr.eq((st7789.y[1:] * 240) + st7789.x[1:]),
+            r.addr.eq((st7789.x * 240) + st7789.y),
             st7789.color.eq(r.data),
+            camconfig.start.eq(btn1),
+            ov7670.cam_SIOC.eq(camconfig.sioc),
+            ov7670.cam_SIOD.eq(camconfig.siod),
+            Cat([led[i] for i in range(8)]).eq(Cat(camconfig.rom_addr[0:7], camconfig.done))
         ]
 
-        with m.If(camread.frame_done):
-            m.d.sync += Cat([led[i] for i in range(8)]).eq(Cat([led[i] for i in range(8)]) + 1)
+        #with m.If(camread.frame_done):
+        #    m.d.sync += Cat([led[i] for i in range(8)]).eq(Cat([led[i] for i in range(8)]) + 1)
 
         return m
 
