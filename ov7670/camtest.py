@@ -34,6 +34,7 @@ class CamTest(Elaboratable):
     def elaborate(self, platform):
         clk25 = platform.request("clk25")
         led = [platform.request("led", i) for i in range(8)]
+        leds = Cat([i.o for i in led])
         ov7670 = platform.request("ov7670")
         btn1 = platform.request("button_fire", 0)
 
@@ -92,7 +93,7 @@ class CamTest(Elaboratable):
 
 
         with m.If(camread.frame_done):
-            m.d.sync += Cat([led[i] for i in range(8)]).eq(Cat([led[i] for i in range(8)]) + 1)
+            m.d.sync += leds.eq(leds + 1)
 
         return m
 
