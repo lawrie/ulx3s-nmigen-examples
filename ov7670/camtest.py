@@ -59,7 +59,7 @@ class CamTest(Elaboratable):
         oled_csn  = platform.request("oled_csn")
 
         # Frame buffer
-        buffer = Memory(width=16, depth=(240 * 240))
+        buffer = Memory(width=16, depth=320 * 240)
         m.submodules.r = r = buffer.read_port()
         m.submodules.w = w = buffer.write_port()
         
@@ -80,20 +80,19 @@ class CamTest(Elaboratable):
             camread.href.eq(ov7670.cam_HREF),
             camread.vsync.eq(ov7670.cam_VSYNC),
             camread.p_clock.eq(ov7670.cam_PCLK),
-            w.en.eq(camread.pixel_valid & (camread.col[1:] < 240)),
-            w.addr.eq((camread.row[1:] * 240) + camread.col[1:]),
+            w.en.eq(camread.pixel_valid),
+            w.addr.eq(((camread.row[1:] - 0) * 320) + camread.col[1:]),
             w.data.eq(camread.pixel_data),
-            #r.en.eq(st7789.next_pixel),
-            r.addr.eq((st7789.x * 240) + st7789.y),
+            r.addr.eq(((239 - st7789.x) * 320) + st7789.y),
             st7789.color.eq(r.data),
             camconfig.start.eq(btn1),
             ov7670.cam_SIOC.eq(camconfig.sioc),
             ov7670.cam_SIOD.eq(camconfig.siod),
-            Cat([led[i] for i in range(8)]).eq(Cat(camconfig.rom_addr[0:7], camconfig.done))
         ]
 
-        #with m.If(camread.frame_done):
-        #    m.d.sync += Cat([led[i] for i in range(8)]).eq(Cat([led[i] for i in range(8)]) + 1)
+
+        with m.If(camread.frame_done):
+            m.d.sync += Cat([led[i] for i in range(8)]).eq(Cat([led[i] for i in range(8)]) + 1)
 
         return m
 
