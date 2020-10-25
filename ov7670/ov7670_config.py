@@ -3,26 +3,26 @@ from enum import IntEnum
 from nmigen import *
 
 class OV7670ConfigState(IntEnum):
-    IDLE = 0
+    IDLE     = 0
     SEND_CMD = 1
-    DONE = 2
-    TIMER = 3
+    DONE     = 2
+    TIMER    = 3
 
 class OV7670Config(Elaboratable):
     def __init__(self):
         self.sccb_ready = Signal()
-        self.rom_data = Signal(16)
-        self.start = Signal()
-        self.rom_addr = Signal(8, reset=0)
-        self.done = Signal(reset=0)
-        self.sccb_addr = Signal(8, reset=0)
-        self.sccb_data = Signal(8, reset=0)
+        self.rom_data   = Signal(16)
+        self.start      = Signal()
+        self.rom_addr   = Signal(8, reset=0)
+        self.done       = Signal(reset=0)
+        self.sccb_addr  = Signal(8, reset=0)
+        self.sccb_data  = Signal(8, reset=0)
         self.sccb_start = Signal(reset=0)
        
     def elaborate(self, platform):
-        fsm_state = Signal(3, reset=OV7670ConfigState.IDLE)
+        fsm_state        = Signal(3, reset=OV7670ConfigState.IDLE)
         fsm_return_state = Signal(3)
-        timer = Signal(32, reset=0)
+        timer            = Signal(32, reset=0)
 
         m = Module()
 

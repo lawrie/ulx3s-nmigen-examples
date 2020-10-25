@@ -1,19 +1,19 @@
 from nmigen import *
 
-WAIT_FRAME_START = 0
-ROW_CAPTURE = 1
-
 class CamRead(Elaboratable):
+    WAIT_FRAME_START = 0
+    ROW_CAPTURE      = 1
+
     def __init__(self):
-        self.p_clock = Signal()
-        self.vsync = Signal()
-        self.href = Signal()
-        self.p_data = Signal(8)
-        self.pixel_data = Signal(16)
+        self.p_clock     = Signal()
+        self.vsync       = Signal()
+        self.href        = Signal()
+        self.p_data      = Signal(8)
+        self.pixel_data  = Signal(16)
         self.pixel_valid = Signal()
-        self.frame_done = Signal()
-        self.row = Signal(10)
-        self.col = Signal(9)
+        self.frame_done  = Signal()
+        self.row         = Signal(10)
+        self.col         = Signal(9)
 
     def elaborate(self, platform):
         m = Module()
@@ -23,14 +23,14 @@ class CamRead(Elaboratable):
         m.domains += pclock
         m.d.comb += pclock.clk.eq(self.p_clock)
 
-        first_byte = Signal(8)
-        second_byte = Signal(8)
-        row_count = Signal(10)
-        col_count = Signal(10)
+        first_byte     = Signal(8)
+        second_byte    = Signal(8)
+        row_count      = Signal(10)
+        col_count      = Signal(10)
         start_of_frame = Signal(1, reset=0)
-        data = Signal(8)
-        fsm_state = Signal(1, reset=0)
-        pixel_half = Signal()
+        data           = Signal(8)
+        fsm_state      = Signal(1, reset=0)
+        pixel_half     = Signal()
         
         m.d.comb += [
             self.row.eq(row_count),
@@ -38,7 +38,7 @@ class CamRead(Elaboratable):
         ]
 
         with m.Switch(fsm_state):
-           with m.Case(WAIT_FRAME_START):
+           with m.Case(self.WAIT_FRAME_START):
                m.d.pclock += [
                    self.frame_done.eq(0),
                    pixel_half.eq(0),
@@ -47,14 +47,14 @@ class CamRead(Elaboratable):
                    col_count.eq(0)
                ]
                with m.If(~self.vsync):
-                   m.d.pclock += fsm_state.eq(ROW_CAPTURE)
-           with m.Case(ROW_CAPTURE):
+                   m.d.pclock += fsm_state.eq(self.ROW_CAPTURE)
+           with m.Case(self.ROW_CAPTURE):
                m.d.pclock += [
                    self.frame_done.eq(self.vsync),
                    self.pixel_valid.eq(self.href & pixel_half)
                ]
                with m.If(self.vsync):
-                   m.d.pclock += fsm_state.eq(WAIT_FRAME_START)
+                   m.d.pclock += fsm_state.eq(self.WAIT_FRAME_START)
                with m.If(self.href):
                    with m.If(start_of_frame):
                        with m.If(~pixel_half):

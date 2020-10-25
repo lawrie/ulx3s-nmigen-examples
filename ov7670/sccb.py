@@ -3,26 +3,26 @@ from enum import IntEnum
 from nmigen import *
 
 class SCCBState(IntEnum):
-    IDLE = 0
+    IDLE         = 0
     START_SIGNAL = 1
-    LOAD_BYTE = 2
-    TX_BYTE_1 = 3
-    TX_BYTE_2 = 4
-    TX_BYTE_3 = 5
-    TX_BYTE_4 = 6
+    LOAD_BYTE    = 2
+    TX_BYTE_1    = 3
+    TX_BYTE_2    = 4
+    TX_BYTE_3    = 5
+    TX_BYTE_4    = 6
     END_SIGNAL_1 = 7
     END_SIGNAL_2 = 8
     END_SIGNAL_3 = 9
     END_SIGNAL_4 = 10
-    DONE = 11
-    TIMER = 12
+    DONE         = 11
+    TIMER        = 12
 
 class SCCB(Elaboratable):
     def __init__(self):
-        self.start = Signal()
+        self.start   = Signal()
         self.address = Signal(8)
-        self.data = Signal(8)
-        self.ready = Signal(reset=1)
+        self.data    = Signal(8)
+        self.ready   = Signal(reset=1)
         self.sioc_oe = Signal(reset=0)
         self.siod_oe = Signal(reset=0)
 
@@ -30,16 +30,16 @@ class SCCB(Elaboratable):
         m = Module()
         
         camera_addr = 0x42
-        sccb_freq = 100000
+        sccb_freq   = 100000
 
-        fsm_state = Signal(4, reset=0)
+        fsm_state        = Signal(4, reset=0)
         fsm_return_state = Signal(4, reset=0)
-        timer = Signal(32, reset=0)
-        latched_address = Signal(8)
-        latched_data = Signal(8)
-        byte_counter = Signal(2, reset=0)
-        tx_byte = Signal(8, reset=0)
-        byte_index = Signal(4, reset=0)
+        timer            = Signal(32, reset=0)
+        latched_address  = Signal(8)
+        latched_data     = Signal(8)
+        byte_counter     = Signal(2, reset=0)
+        tx_byte          = Signal(8, reset=0)
+        byte_index       = Signal(4, reset=0)
 
         delay1 = int(platform.default_clk_frequency / (4 * sccb_freq))
         delay2 = int((2 * platform.default_clk_frequency) / sccb_freq)
