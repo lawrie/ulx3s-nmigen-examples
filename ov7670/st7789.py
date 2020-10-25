@@ -1,35 +1,22 @@
 from nmigen import *
 
-C_CLK_MHZ      = 25
-C_COLOR_BITS   = 16
-C_X_SIZE       = 240
-C_Y_SIZE       = 240
-C_X_BITS       = 8
-C_Y_BITS       = 8
-C_CLK_PHASE    = 0
-C_CLK_POLARITY = 1
-C_NOP          = 0
-C_INIT_FILE    = "st7789_linit.mem"
-C_INIT_SIZE    = 38
-
-def readhex(filename):
-    f = open(filename,"r")
-    l = []
-    while True:
-        s = f.readline()
-        if s:
-            if s[0] != "/":
-                l.append(int(s,16))
-        else:
-            break
-    f.close()
-    return l
+from readhex import *
 
 class ST7789(Elaboratable):
+    COLOR_BITS   = 16
+    X_SIZE       = 240
+    Y_SIZE       = 240
+    X_BITS       = X_SIZE.bit_length()
+    Y_BITS       = Y_SIZE.bit_length()
+    CLK_PHASE    = 0
+    CLK_POLARITY = 1
+    NOP          = 0
+    INIT_FILE    = "st7789_linit.mem"
+
     def __init__(self, reset_delay):
-        self.color          = Signal(C_COLOR_BITS)
-        self.x              = Signal(C_X_BITS)
-        self.y              = Signal(C_Y_BITS)
+        self.color          = Signal(self.COLOR_BITS)
+        self.x              = Signal(self.X_BITS)
+        self.y              = Signal(self.Y_BITS)
         self.next_pixel     = Signal()
         self.spi_csn        = Signal()
         self.spi_clk        = Signal()
@@ -46,13 +33,15 @@ class ST7789(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
+        clk_mhz = int(platform.default_clk_frequency / 1000000)
+
         index        = Signal(11, reset = 0)
-        data         = Signal(8,  reset = C_NOP)
+        data         = Signal(8,  reset = self.NOP)
         dc           = Signal(1,  reset = 1)
         byte_toggle  = Signal(1,  reset = 0)
         init         = Signal(1,  reset = 1)
         num_args     = Signal(5,  reset = 0)
-        delay_cnt    = Signal(28, reset = self.reset_delay * C_CLK_MHZ)
+        delay_cnt    = Signal(28, reset = self.reset_delay * clk_mhz)
         arg          = Signal(6,  reset = 1)
         delay_set    = Signal(1,  reset = 0)
         last_cmd     = Signal(8,  reset = 0)
@@ -60,14 +49,14 @@ class ST7789(Elaboratable):
         clken        = Signal(1,  reset = 0)
         next_byte    = Signal(8)
 
-        init_data = readhex(C_INIT_FILE)
-        oled_init = Memory(width=8, depth=C_INIT_SIZE, init = init_data)
+        init_data = readhex(self.INIT_FILE)
+        oled_init = Memory(width=8, depth=len(init_data), init = init_data)
         
         m.d.comb += [
              self.spi_resn.eq(resn),
              self.spi_csn.eq(~clken),
              self.spi_dc.eq(dc),
-             self.spi_clk.eq(((index[0] ^ ~C_CLK_PHASE) | ~clken) ^ ~C_CLK_POLARITY),
+             self.spi_clk.eq(((index[0] ^ ~self.CLK_PHASE) | ~clken) ^ ~self.CLK_POLARITY),
              self.spi_mosi.eq(data[7]),
              next_byte.eq(oled_init[index[4:]])
         ]
@@ -77,7 +66,7 @@ class ST7789(Elaboratable):
                 delay_cnt.eq(delay_cnt - 1),
                 resn.eq(1)
             ]
-        with m.If(index[4:] != C_INIT_SIZE):
+        with m.If(index[4:] != len(init_data)):
             m.d.sync += index.eq(index+1)
             with m.If(index[0:4] == 0): # Start of byte
                 with m.If(init): # Still initialization
@@ -87,7 +76,7 @@ class ST7789(Elaboratable):
                     ]
                     with m.If(arg == 0):
                         m.d.sync += [
-                            data.eq(C_NOP),
+                            data.eq(self.NOP),
                             clken.eq(0),
                             last_cmd.eq(next_byte)
                         ]
@@ -110,8 +99,8 @@ class ST7789(Elaboratable):
                             m.d.sync += arg.eq(0)
                     with m.Elif(delay_set):
                         m.d.sync += [
-                            delay_cnt.eq(C_CLK_MHZ << next_byte[0:5]), # 2^n us delay
-                            data.eq(C_NOP),
+                            delay_cnt.eq(clk_mhz << next_byte[0:5]), # 2^n us delay
+                            data.eq(self.NOP),
                             clken.eq(0),
                             delay_set.eq(0),
                             arg.eq(0)
@@ -127,9 +116,9 @@ class ST7789(Elaboratable):
                             data.eq(self.color[0:8]),
                             self.next_pixel.eq(1)
                         ]
-                        with m.If(self.x == C_X_SIZE - 1):
+                        with m.If(self.x == self.X_SIZE - 1):
                             m.d.sync += self.x.eq(0)
-                            with m.If(self.y == C_Y_SIZE -1):
+                            with m.If(self.y == self.Y_SIZE -1):
                                 m.d.sync += self.y.eq(0)
                             with m.Else():
                                m.d.sync += self.y.eq(self.y + 1)
