@@ -4,11 +4,11 @@ class DivideBy12(Elaboratable):
     def __init__(self):
         self.numer  = Signal(6)
         self.quotient = Signal(3)
-        self.remain = Signal(3)
+        self.remain = Signal(4)
     
     def elaborate(self, platform):
         q = Signal(3)
-        r = Signal(4)
+        r = Signal(2)
 
         m = Module()
 
