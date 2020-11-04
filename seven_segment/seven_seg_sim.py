@@ -1,5 +1,5 @@
 from nmigen import *
-from nmigen.back.pysim import *
+from nmigen.sim import *
 from seven_seg import SevenSegController 
  
 def print_seven(leds):
@@ -17,13 +17,13 @@ def print_seven(leds):
  
  
 if __name__ == "__main__":
+    def process():
+        for i in range(16):
+            yield dut.val.eq(i)
+            yield Delay()
+            print_seven((yield dut.leds))
     dut = SevenSegController()
-    with Simulator(dut) as sim:
-        def process():
-            for i in range(16):
-                yield dut.val.eq(i)
-                yield Delay()
-                print_seven((yield dut.leds))
-        sim.add_process(process)
-        sim.run()
+    sim = Simulator(dut) 
+    sim.add_process(process)
+    sim.run()
 
