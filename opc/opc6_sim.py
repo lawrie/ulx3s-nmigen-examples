@@ -10,14 +10,14 @@ class TestCPU(Elaboratable):
 
         m.submodules.opc6 = self.opc6 = OPC6()
         code = readhex("test.hex")
-        print(code)
+        #print(code)
         mem = Memory(width=16, depth = 1024, init=code)
 
         din = Signal(16)
 
         m.d.comb += din.eq(mem[self.opc6.address])
         
-        with m.If(self.opc6.rnw == 0):
+        with m.If((self.opc6.rnw == 0) & (self.opc6.vio == 0)):
             m.d.sync += mem[self.opc6.address].eq(self.opc6.dout)
 
         m.d.comb += [
@@ -40,10 +40,14 @@ if __name__ == "__main__":
         while(True):
             yield
             halted = ((yield test.opc6.halted))
+            vio = ((yield test.opc6.vio))
+            addr = ((yield test.opc6.address))
+            dout = ((yield test.opc6.dout))
             if halted:
-                print("Halted")
+                print("\nHalted")
                 break
-        addr = ((yield test.opc6.address))
+            if (vio and addr == 0xfe09):
+                print(chr(dout), end='')
         print("Address: " + str(addr))
 
     sim.add_sync_process(process)
