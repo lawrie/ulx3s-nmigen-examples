@@ -85,9 +85,9 @@ class OPC6(Elaboratable):
             with m.Case(XOR, GPSR):
                 m.d.comb += Cat([result,carry]).eq(Mux(IR_q[IRNPRED], Cat([PSR_q,Const(0,8),PSR_q[C]]), (RF_dout ^ operand)))
             with m.Case(NOT, BSWP):
-                m.d.comb += Cat([result,carry]).eq(Mux(IR_q[10],Cat([PSR_q[C], ~operand]),Cat([PSR_q[C], operand[8:], operand[:8]])))
+                m.d.comb += Cat([carry,result]).eq(Mux(IR_q[10],Cat([PSR_q[C], ~operand]),Cat([PSR_q[C], operand[8:], operand[:8]])))
             with m.Case(ROR, ASR, LSR):
-                m.d.comb += Cat([result,carry]).eq(Cat([operand, Mux((IR_q[10] == 0), PSR_q[C], Mux(IR_q[8], operand[15], 0))]))
+                m.d.comb += Cat([carry,result]).eq(Cat([operand, Mux((IR_q[10] == 0), PSR_q[C], Mux(IR_q[8], operand[15], 0))]))
             with m.Default():
                 m.d.comb += Cat([result,carry]).eq(Cat([operand, PSR_q[C]]))
 
