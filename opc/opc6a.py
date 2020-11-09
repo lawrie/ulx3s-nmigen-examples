@@ -24,8 +24,32 @@ class OPC6(Elaboratable):
                 self.vpa, self.vda, self.vio, self.dout, self.address, self.rnw]
 
     def elaborate(self, platform):
-        OR_q, PC_q, PCI_q, result, IR_q, FSM_q, swiid, PSRI_q, PSR_q, zero, carry, sign, enable_int, reset_s0_b, reset_s1_b, pred_q, op, op_d,pred_d, pred_din, RF_w_p2, RF_dout, operand, repl1, repl2 = tuple(map(lambda x: Signal(x), [16,16,16,16,20,3,4,4,8,1,1,1,1,1,1,1,5,5,1,1,16,16,16,16,16]))
-        
+        OR_q       = Signal(16)
+        PC_q       = Signal(16)
+        PCI_q      = Signal(16)
+        result     = Signal(16)
+        IR_q       = Signal(20)
+        FSM_q      = Signal(3)
+        swiid      = Signal(4)
+        PSRI_q     = Signal(4)
+        PSR_q      = Signal(8)
+        zero       = Signal()
+        carry      = Signal()
+        sign       = Signal()
+        enable_int = Signal()
+        reset_s0_b = Signal()
+        reset_s1_b = Signal()
+        pred_q     = Signal()
+        op         = Signal(5)
+        op_d       = Signal(5)
+        pred_d     = Signal()
+        pred_din   = Signal()
+        RF_w_p2    = Signal(16)
+        RF_dout    = Signal(16)
+        operand    = Signal(16)
+        repl1      = Signal(16)
+        repl2      = Signal(16)
+
         RF_q = Memory(width=16, depth=16, name="reg")       
         m = Module()
 
