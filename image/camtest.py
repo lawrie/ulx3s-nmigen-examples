@@ -99,6 +99,7 @@ class CamTest(Elaboratable):
         leds = Cat([i.o for i in led])
         ov7670 = platform.request("ov7670")
         btn1 = platform.request("button_fire", 0)
+        sw0 = platform.request("switch",0)
 
         # Add CamRead submodule
         camread = CamRead()
@@ -116,7 +117,7 @@ class CamTest(Elaboratable):
         oled_csn  = platform.request("oled_csn")
 
         # Frame buffer
-        buffer = Memory(width=16, depth=320 * 240)
+        buffer = Memory(width=16, depth=320 * 480)
         m.submodules.r = r = buffer.read_port()
         m.submodules.w = w = buffer.write_port()
         
@@ -162,6 +163,22 @@ class CamTest(Elaboratable):
             vga_blank.eq(vga.o_vga_blank),
         ]
 
+        psum = Signal(8)
+
+        with m.If(sw0):
+            m.d.comb += [
+                psum.eq(r.data[11:] + r.data[5:11] + r.data[0:5]),
+                vga.i_r.eq(psum),
+                vga.i_g.eq(psum),
+                vga.i_b.eq(psum)
+            ]
+        with m.Else():
+            m.d.comb += [
+                vga.i_r.eq(Cat(Const(0, unsigned(3)), r.data[11:16])), 
+                vga.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])), 
+                vga.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])), 
+            ]
+
         # VGA to digital video converter.
         tmds = [Signal(2) for i in range(4)]
         m.submodules.vga2dvid = vga2dvid = VGA2DVID(ddr=self.ddr, shift_clock_synchronizer=False)
@@ -192,10 +209,12 @@ class CamTest(Elaboratable):
             camread.vsync.eq(ov7670.cam_VSYNC),
             camread.p_clock.eq(ov7670.cam_PCLK),
             w.en.eq(camread.pixel_valid),
-            w.addr.eq(camread.col[1:] * 320 + camread.row[1:]),
+            #w.addr.eq(camread.col[1:] * 320 + camread.row[1:]),
+            w.addr.eq(camread.col * 320 + camread.row[1:]),
             w.data.eq(camread.pixel_data),
             #r.addr.eq(((239 - st7789.x) * 320) + st7789.y),
-            r.addr.eq(vga.o_beam_y[1:] * 320 + vga.o_beam_x[1:]),
+            #r.addr.eq(vga.o_beam_y[1:] * 320 + vga.o_beam_x[1:]),
+            r.addr.eq(vga.o_beam_y * 320 + vga.o_beam_x[1:]),
             #st7789.color.eq(r.data),
             camconfig.start.eq(btn1),
             ov7670.cam_SIOC.eq(camconfig.sioc),
