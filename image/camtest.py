@@ -136,6 +136,9 @@ class CamTest(Elaboratable):
         vga_vsync = Signal()
         vga_blank = Signal()
 
+        psum = Signal(8)
+
+        # Add VGA generator
         m.submodules.vga = vga = VGA(
            resolution_x      = self.timing.x,
            hsync_front_porch = hsync_front_porch,
@@ -149,12 +152,10 @@ class CamTest(Elaboratable):
            bits_y            = 16  # a smaller/larger value will make it pass timing.
         )
 
+        # Generate VGA signals
         m.d.comb += [
             vga.i_clk_en.eq(1),
             vga.i_test_picture.eq(0),
-            vga.i_r.eq(Cat(Const(0, unsigned(3)), r.data[11:16])), 
-            vga.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])), 
-            vga.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])), 
             vga_r.eq(vga.o_vga_r),
             vga_g.eq(vga.o_vga_g),
             vga_b.eq(vga.o_vga_b),
@@ -162,8 +163,6 @@ class CamTest(Elaboratable):
             vga_vsync.eq(vga.o_vga_vsync),
             vga_blank.eq(vga.o_vga_blank),
         ]
-
-        psum = Signal(8)
 
         with m.If(sw0):
             m.d.comb += [
