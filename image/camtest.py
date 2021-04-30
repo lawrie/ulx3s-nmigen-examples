@@ -5,8 +5,8 @@ from nmigen.build import *
 from nmigen_boards.ulx3s import *
 
 from camread import *
-from st7789 import *
 from camconfig import *
+from image_stream import *
 
 from vga2dvid import VGA2DVID
 from vga import VGA
@@ -26,15 +26,6 @@ gpdi_resource = [
     Resource("gpdi_cec", 0, Pins("A18"),             Attrs(IO_TYPE="LVCMOS33",  DRIVE="4", PULLMODE="UP")),
     Resource("gpdi_sda", 0, Pins("B19"),             Attrs(IO_TYPE="LVCMOS33",  DRIVE="4", PULLMODE="UP")),
     Resource("gpdi_scl", 0, Pins("E12"),             Attrs(IO_TYPE="LVCMOS33",  DRIVE="4", PULLMODE="UP")),
-]
-
-# The OLED pins are not defined in the ULX3S platform in nmigen_boards.
-oled_resource = [
-    Resource("oled_clk",  0, Pins("P4", dir="o"), Attrs(IO_TYPE="LVCMOS33", DRIVE="4", PULLMODE="UP")),
-    Resource("oled_mosi", 0, Pins("P3", dir="o"), Attrs(IO_TYPE="LVCMOS33", DRIVE="4", PULLMODE="UP")),
-    Resource("oled_dc",   0, Pins("P1", dir="o"), Attrs(IO_TYPE="LVCMOS33", DRIVE="4", PULLMODE="UP")),
-    Resource("oled_resn", 0, Pins("P2", dir="o"), Attrs(IO_TYPE="LVCMOS33", DRIVE="4", PULLMODE="UP")),
-    Resource("oled_csn",  0, Pins("N2", dir="o"), Attrs(IO_TYPE="LVCMOS33", DRIVE="4", PULLMODE="UP")),
 ]
 
 ov7670_pmod = [
@@ -105,28 +96,45 @@ class CamTest(Elaboratable):
         camread = CamRead()
         m.submodules.camread = camread
 
-        # Add ST7789 submodule
-        #st7789 = ST7789(150000)
-        #m.submodules.st7789 = st7789
+        # Camera config
+        camconfig = CamConfig()
+        m.submodules.camconfig = camconfig
 
-        # OLED
-        oled_clk  = platform.request("oled_clk")
-        oled_mosi = platform.request("oled_mosi")
-        oled_dc   = platform.request("oled_dc")
-        oled_resn = platform.request("oled_resn")
-        oled_csn  = platform.request("oled_csn")
+        # Configure and read the camera
+        m.d.comb += [
+            ov7670.cam_RESET.eq(1),
+            ov7670.cam_PWON.eq(0),
+            ov7670.cam_XCLK.eq(clk25.i),
+            ov7670.cam_SIOC.eq(camconfig.sioc),
+            ov7670.cam_SIOD.eq(camconfig.siod),
+            camconfig.start.eq(btn1),
+            camread.p_data.eq(Cat([ov7670.cam_data[i] for i in range(8)])),
+            camread.href.eq(ov7670.cam_HREF),
+            camread.vsync.eq(ov7670.cam_VSYNC),
+            camread.p_clock.eq(ov7670.cam_PCLK)
+        ]
+
+        # Increment leds when frame is read from the camera
+        with m.If(camread.frame_done):
+            m.d.sync += leds.eq(leds + 1)
 
         # Frame buffer
         buffer = Memory(width=16, depth=320 * 480)
         m.submodules.r = r = buffer.read_port()
         m.submodules.w = w = buffer.write_port()
         
-        # Camera config
-        camconfig = CamConfig()
-        m.submodules.camconfig = camconfig
+        # Image stream
+        ims = ImageStream()
+        m.submodules.image_stream = ims
 
-        with m.If(camread.frame_done):
-            m.d.sync += leds.eq(leds + 1)
+        m.d.comb += [
+            ims.valid.eq(camread.pixel_valid),
+            ims.i_x.eq(camread.row[1:]),
+            ims.i_y.eq(camread.col),
+            ims.i_r.eq(camread.pixel_data[11:]),
+            ims.i_g.eq(camread.pixel_data[5:11]),
+            ims.i_b.eq(camread.pixel_data[0:5])
+        ]
 
         # VGA signal generator.
         vga_r = Signal(8)
@@ -152,10 +160,21 @@ class CamTest(Elaboratable):
            bits_y            = 16  # a smaller/larger value will make it pass timing.
         )
 
+        # Connect frame buffer
+        m.d.comb += [
+            w.en.eq(ims.ready),
+            w.addr.eq(ims.o_y * 320 + ims.o_x),
+            w.data.eq(Cat(ims.o_b, ims.o_g, ims.o_r)),
+            r.addr.eq(vga.o_beam_y * 320 + vga.o_beam_x[1:])
+        ]
+
         # Generate VGA signals
         m.d.comb += [
             vga.i_clk_en.eq(1),
             vga.i_test_picture.eq(0),
+            vga.i_r.eq(Cat(Const(0, unsigned(3)), r.data[11:16])), 
+            vga.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])), 
+            vga.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])), 
             vga_r.eq(vga.o_vga_r),
             vga_g.eq(vga.o_vga_g),
             vga_b.eq(vga.o_vga_b),
@@ -164,18 +183,13 @@ class CamTest(Elaboratable):
             vga_blank.eq(vga.o_vga_blank),
         ]
 
+        # Optional convert to monochrome
         with m.If(sw0):
             m.d.comb += [
                 psum.eq(r.data[11:] + r.data[5:11] + r.data[0:5]),
                 vga.i_r.eq(psum),
                 vga.i_g.eq(psum),
                 vga.i_b.eq(psum)
-            ]
-        with m.Else():
-            m.d.comb += [
-                vga.i_r.eq(Cat(Const(0, unsigned(3)), r.data[11:16])), 
-                vga.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])), 
-                vga.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])), 
             ]
 
         # VGA to digital video converter.
@@ -192,32 +206,6 @@ class CamTest(Elaboratable):
             tmds[2].eq(vga2dvid.o_red),
             tmds[1].eq(vga2dvid.o_green),
             tmds[0].eq(vga2dvid.o_blue),
-        ]
-
-        m.d.comb += [
-            #oled_clk .eq(st7789.spi_clk),
-            #oled_mosi.eq(st7789.spi_mosi),
-            #oled_dc  .eq(st7789.spi_dc),
-            #oled_resn.eq(st7789.spi_resn),
-            #oled_csn .eq(1),
-            ov7670.cam_RESET.eq(1),
-            ov7670.cam_PWON.eq(0),
-            ov7670.cam_XCLK.eq(clk25.i),
-            camread.p_data.eq(Cat([ov7670.cam_data[i] for i in range(8)])),
-            camread.href.eq(ov7670.cam_HREF),
-            camread.vsync.eq(ov7670.cam_VSYNC),
-            camread.p_clock.eq(ov7670.cam_PCLK),
-            w.en.eq(camread.pixel_valid),
-            #w.addr.eq(camread.col[1:] * 320 + camread.row[1:]),
-            w.addr.eq(camread.col * 320 + camread.row[1:]),
-            w.data.eq(camread.pixel_data),
-            #r.addr.eq(((239 - st7789.x) * 320) + st7789.y),
-            #r.addr.eq(vga.o_beam_y[1:] * 320 + vga.o_beam_x[1:]),
-            r.addr.eq(vga.o_beam_y * 320 + vga.o_beam_x[1:]),
-            #st7789.color.eq(r.data),
-            camconfig.start.eq(btn1),
-            ov7670.cam_SIOC.eq(camconfig.sioc),
-            ov7670.cam_SIOD.eq(camconfig.siod),
         ]
 
         if (self.ddr):
@@ -276,9 +264,7 @@ if __name__ == "__main__":
     m = Module()
     m.submodules.top = top = CamTest(timing=vga_timings['640x480@60Hz'])
 
-    # Add resources for OV7670 camera and Oled
-    platform.add_resources(ov7670_pmod)    
-    platform.add_resources(oled_resource)
+    platform.add_resources(ov7670_pmod)
 
     # Add the GPDI resource defined above to the platform so we
     # can reference it below.
