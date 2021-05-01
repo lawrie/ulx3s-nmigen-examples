@@ -16,22 +16,25 @@ class ImageStream(Elaboratable):
         self.o_r         = Signal(5)
         self.o_g         = Signal(6)
         self.o_b         = Signal(5)
+        self.val         = Signal(5)
         self.edge        = Signal()
         self.xflip       = Signal()
         self.yflip       = Signal()
         self.bright      = Signal()
-        self.val         = Signal(5)
         self.red         = Signal()
+        self.mono        = Signal()
 
     def elaborate(self,platform):
         m = Module()
 
+        # Save current pixel
         p_r = Signal(5)
         p_g = Signal(6)
         p_r = Signal(5)
 
-        s = Signal(8)
-        p_s = Signal(8)
+        # Sum of colors and previous sum
+        s = Signal(7)
+        p_s = Signal(7)
 
         m.d.comb += [
             s.eq(self.i_r + self.i_g + self.i_b)
@@ -42,15 +45,19 @@ class ImageStream(Elaboratable):
             p_s.eq(s)
         ]
 
+        # Process pixel when valid set, and set ready
         with m.If(self.valid):
             m.d.sync += [
                 self.ready.eq(1),
+                # Horizontal and vertical flip
                 self.o_x.eq(Mux(self.xflip, 319 - self.i_x, self.i_x)),
                 self.o_y.eq(Mux(self.yflip, 479 - self.i_y, self.i_y)),
+                # Copy input pixel by default
                 self.o_r.eq(self.i_r),
                 self.o_g.eq(self.i_g),
                 self.o_b.eq(self.i_b)
             ]
+            # Simple edge detection
             with m.If(self.edge):
                 with m.If(((p_s > s) & ((p_s - s) > 2)) | ((p_s < s) & ((s - p_s) > 2))):
                     m.d.sync += [
@@ -64,12 +71,22 @@ class ImageStream(Elaboratable):
                         self.o_g.eq(0),
                         self.o_b.eq(0)
                     ]
+            # Increase brightness
             with m.If(self.bright):
                 m.d.sync += [
                     self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val)),
                     self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, self.i_g + self.val)),
                     self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, self.i_b + self.val))
                 ]
+            # Convert to monochrome
+            with m.If(self.mono):
+                m.d.sync += [
+                    self.o_r.eq(s[2:]),
+                    self.o_g.eq(s[1:]),
+                    self.o_b.eq(s[2:])
+                ]
+
+            # Increase redness
             with m.If(self.red):
                 m.d.sync += [
                     self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val))
