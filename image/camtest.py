@@ -146,10 +146,11 @@ class CamTest(Elaboratable):
         with m.If(debdown.btn_down):
             m.d.sync += val.eq(val-1)
 
-        # Show value on leds
-        m.d.comb += leds.eq(val)
-
         # Image stream
+        max_r = Signal(5)
+        max_g = Signal(6)
+        max_b = Signal(5)
+
         ims = ImageStream()
         m.submodules.image_stream = ims
 
@@ -168,6 +169,23 @@ class CamTest(Elaboratable):
             ims.yflip.eq(sw3),
             ims.val.eq(val)
         ]
+
+        with m.If(ims.i_r > max_r):
+            m.d.sync += max_r.eq(ims.i_r) 
+        with m.If(ims.i_g > max_g):
+            m.d.sync += max_g.eq(ims.i_g) 
+        with m.If(ims.i_b > max_b):
+            m.d.sync += max_b.eq(ims.i_b) 
+
+        with m.If(camread.frame_done):
+            m.d.sync += [
+                max_r.eq(0),
+                max_g.eq(0),
+                max_b.eq(0)
+            ]
+
+        # Show value on leds
+        m.d.comb += leds.eq(max_b)
 
         # VGA signal generator.
         vga_r = Signal(8)

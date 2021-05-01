@@ -22,6 +22,8 @@ class ImageStream(Elaboratable):
         self.yflip       = Signal()
         self.bright      = Signal()
         self.red         = Signal()
+        self.green       = Signal()
+        self.blue        = Signal()
         self.mono        = Signal()
 
     def elaborate(self,platform):
@@ -86,10 +88,18 @@ class ImageStream(Elaboratable):
                     self.o_b.eq(s[2:])
                 ]
 
-            # Increase redness
+            # Increase colors
             with m.If(self.red):
                 m.d.sync += [
                     self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val))
+                ]
+            with m.If(self.green):
+                m.d.sync += [
+                    self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, self.i_g + self.val))
+                ]
+            with m.If(self.blue):
+                m.d.sync += [
+                    self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, self.i_b + self.val))
                 ]
 
         return m
