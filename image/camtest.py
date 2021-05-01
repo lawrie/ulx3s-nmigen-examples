@@ -7,6 +7,7 @@ from nmigen_boards.ulx3s import *
 from camread import *
 from camconfig import *
 from image_stream import *
+from debouncer import *
 
 from vga2dvid import VGA2DVID
 from vga import VGA
@@ -90,7 +91,12 @@ class CamTest(Elaboratable):
         leds = Cat([i.o for i in led])
         ov7670 = platform.request("ov7670")
         btn1 = platform.request("button_fire", 0)
+        up = platform.request("button_up", 0)
+        down = platform.request("button_down", 0)
         sw0 = platform.request("switch",0)
+        sw1 = platform.request("switch",1)
+        sw2 = platform.request("switch",2)
+        sw3 = platform.request("switch",3)
 
         # Add CamRead submodule
         camread = CamRead()
@@ -114,15 +120,35 @@ class CamTest(Elaboratable):
             camread.p_clock.eq(ov7670.cam_PCLK)
         ]
 
-        # Increment leds when frame is read from the camera
-        with m.If(camread.frame_done):
-            m.d.sync += leds.eq(leds + 1)
-
         # Frame buffer
         buffer = Memory(width=16, depth=320 * 480)
         m.submodules.r = r = buffer.read_port()
         m.submodules.w = w = buffer.write_port()
-        
+
+        # Buttons and val
+        debup = Debouncer()
+        m.submodules.debup = debup
+
+        val = Signal(5)
+        up_down = Signal()
+
+        debdown = Debouncer()
+        m.submodules.debdown = debdown
+
+        m.d.comb += [
+            debup.btn.eq(up),
+            debdown.btn.eq(down)
+        ]
+
+        with m.If(debup.btn_down):
+            m.d.sync += val.eq(val+1)
+
+        with m.If(debdown.btn_down):
+            m.d.sync += val.eq(val-1)
+
+        # Show value on leds
+        m.d.comb += leds.eq(val)
+
         # Image stream
         ims = ImageStream()
         m.submodules.image_stream = ims
@@ -133,7 +159,12 @@ class CamTest(Elaboratable):
             ims.i_y.eq(camread.col),
             ims.i_r.eq(camread.pixel_data[11:]),
             ims.i_g.eq(camread.pixel_data[5:11]),
-            ims.i_b.eq(camread.pixel_data[0:5])
+            ims.i_b.eq(camread.pixel_data[0:5]),
+            ims.edge.eq(0),
+            ims.xflip.eq(sw2),
+            ims.yflip.eq(sw3),
+            ims.bright.eq(sw1),
+            ims.binc.eq(val)
         ]
 
         # VGA signal generator.
