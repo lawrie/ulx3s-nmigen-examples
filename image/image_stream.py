@@ -20,7 +20,8 @@ class ImageStream(Elaboratable):
         self.xflip       = Signal()
         self.yflip       = Signal()
         self.bright      = Signal()
-        self.binc        = Signal(5)
+        self.val         = Signal(5)
+        self.red         = Signal()
 
     def elaborate(self,platform):
         m = Module()
@@ -65,9 +66,13 @@ class ImageStream(Elaboratable):
                     ]
             with m.If(self.bright):
                 m.d.sync += [
-                    self.o_r.eq(Mux(self.i_r + self.binc > 0x1f, 0x1f, self.i_r + self.binc)),
-                    self.o_g.eq(Mux(self.i_g + self.binc > 0x3f, 0x3f, self.i_g + self.binc)),
-                    self.o_b.eq(Mux(self.i_b + self.binc > 0x1f, 0x1f, self.i_b + self.binc))
+                    self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val)),
+                    self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, self.i_g + self.val)),
+                    self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, self.i_b + self.val))
+                ]
+            with m.If(self.red):
+                m.d.sync += [
+                    self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val))
                 ]
 
         return m

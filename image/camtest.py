@@ -161,10 +161,11 @@ class CamTest(Elaboratable):
             ims.i_g.eq(camread.pixel_data[5:11]),
             ims.i_b.eq(camread.pixel_data[0:5]),
             ims.edge.eq(0),
+            ims.red.eq(sw0),
+            ims.bright.eq(sw1),
             ims.xflip.eq(sw2),
             ims.yflip.eq(sw3),
-            ims.bright.eq(sw1),
-            ims.binc.eq(val)
+            ims.val.eq(val)
         ]
 
         # VGA signal generator.
@@ -213,15 +214,6 @@ class CamTest(Elaboratable):
             vga_vsync.eq(vga.o_vga_vsync),
             vga_blank.eq(vga.o_vga_blank),
         ]
-
-        # Optional convert to monochrome
-        with m.If(sw0):
-            m.d.comb += [
-                psum.eq(r.data[11:] + r.data[5:11] + r.data[0:5]),
-                vga.i_r.eq(psum),
-                vga.i_g.eq(psum),
-                vga.i_b.eq(psum)
-            ]
 
         # VGA to digital video converter.
         tmds = [Signal(2) for i in range(4)]
