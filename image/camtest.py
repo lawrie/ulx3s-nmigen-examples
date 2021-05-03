@@ -42,6 +42,18 @@ ov7670_pmod = [
              Subsignal("cam_RESET", Pins("3-", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33",DRIVE="4")))
 ]
 
+switch_pmod = [
+    Resource("sw8", 0,
+             Subsignal("sw8", Pins("14+", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw7", Pins("15+", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw6", Pins("16+", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw5", Pins("17+", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw4", Pins("14-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw3", Pins("15-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw2", Pins("16-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
+             Subsignal("sw1", Pins("17-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")))
+]
+
 class CamTest(Elaboratable):
     def __init__(self,
                  timing: VGATiming, # VGATiming class
@@ -97,6 +109,7 @@ class CamTest(Elaboratable):
         sw1 = platform.request("switch",1)
         sw2 = platform.request("switch",2)
         sw3 = platform.request("switch",3)
+        sw8 = platform.request("sw8")
 
         # Add CamRead submodule
         camread = CamRead()
@@ -129,7 +142,7 @@ class CamTest(Elaboratable):
         debup = Debouncer()
         m.submodules.debup = debup
 
-        val = Signal(5)
+        val = Signal(signed(6))
         up_down = Signal()
 
         debdown = Debouncer()
@@ -161,8 +174,11 @@ class CamTest(Elaboratable):
             ims.i_r.eq(camread.pixel_data[11:]),
             ims.i_g.eq(camread.pixel_data[5:11]),
             ims.i_b.eq(camread.pixel_data[0:5]),
-            ims.edge.eq(0),
-            ims.red.eq(0),
+            ims.edge.eq(sw8.sw1),
+            ims.red.eq(sw8.sw2),
+            ims.green.eq(sw8.sw3),
+            ims.blue.eq(sw8.sw4),
+            ims.invert.eq(sw8.sw5),
             ims.mono.eq(sw0),
             ims.bright.eq(sw1),
             ims.xflip.eq(sw2),
@@ -185,7 +201,7 @@ class CamTest(Elaboratable):
             ]
 
         # Show value on leds
-        m.d.comb += leds.eq(max_b)
+        m.d.comb += leds.eq(val)
 
         # VGA signal generator.
         vga_r = Signal(8)
@@ -307,6 +323,7 @@ if __name__ == "__main__":
     m.submodules.top = top = CamTest(timing=vga_timings['640x480@60Hz'])
 
     platform.add_resources(ov7670_pmod)
+    platform.add_resources(switch_pmod)
 
     # Add the GPDI resource defined above to the platform so we
     # can reference it below.
