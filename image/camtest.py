@@ -187,6 +187,7 @@ class CamTest(Elaboratable):
             ims.green.eq(sw8.sw3),
             ims.blue.eq(sw8.sw4),
             ims.invert.eq(sw8.sw5),
+            ims.border.eq(sw8.sw6),
             ims.mono.eq(sw0),
             ims.bright.eq(sw1),
             ims.x_flip.eq(sw2),

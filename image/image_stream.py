@@ -27,6 +27,7 @@ class ImageStream(Elaboratable):
         self.blue        = Signal()
         self.mono        = Signal()
         self.invert      = Signal()
+        self.border      = Signal()
 
     def elaborate(self, platform):
         m = Module()
@@ -78,6 +79,24 @@ class ImageStream(Elaboratable):
                 cl.eq(Mux(cl == 2, 0, cl + 1))
             ]
 
+        c_r = Signal(5)
+        c_g = Signal(6)
+        c_b = Signal(5)
+
+        # Convert to monochrome
+        with m.If(self.mono):
+            m.d.comb += [
+                c_r.eq(Mux(self.invert, 0x1f - s[2:], s[2:])),
+                c_g.eq(Mux(self.invert, 0x3f - s[1:], s[1:])),
+                c_b.eq(Mux(self.invert, 0x1f - s[2:], s[2:]))
+            ]
+        with m.Else():
+            m.d.comb += [
+                c_r.eq(self.i_r),
+                c_g.eq(self.i_g),
+                c_r.eq(self.i_r)
+            ]
+
         # Process pixel when valid set, and set ready
         with m.If(self.valid):
             m.d.sync += [
@@ -86,9 +105,9 @@ class ImageStream(Elaboratable):
                 self.o_x.eq(c_x),
                 self.o_y.eq(c_y),
                 # Copy input pixel by default
-                self.o_r.eq(self.i_r),
-                self.o_g.eq(self.i_g),
-                self.o_b.eq(self.i_b),
+                self.o_r.eq(c_r),
+                self.o_g.eq(c_g),
+                self.o_b.eq(c_b),
                 # Write pixel to current line
                 w.addr.eq(cl * self.res_x + c_x),
                 w.data.eq(Cat(self.i_b, self.i_g, self.i_r)),
@@ -96,6 +115,7 @@ class ImageStream(Elaboratable):
                 r.addr.eq(pl * self.res_x + c_x),
                 above.eq(r.data)
             ]
+
             # Simple edge detection
             with m.If(self.edge):
                 with m.If(((p_s > s) & ((p_s - s) > self.val)) | ((p_s < s) & ((s - p_s) > self.val))):
@@ -110,32 +130,27 @@ class ImageStream(Elaboratable):
                         self.o_g.eq(0),
                         self.o_b.eq(0)
                     ]
-            # Convert to monochrome
-            with m.If(self.mono):
-                m.d.sync += [
-                    self.o_r.eq(s[2:]),
-                    self.o_g.eq(s[1:]),
-                    self.o_b.eq(s[2:])
-                ]
-            # Invert (monochrome)
-            with m.If(self.invert):
-                m.d.sync += [
-                    self.o_r.eq(0x1f - s[2:]),
-                    self.o_g.eq(0x3f - s[1:]),
-                    self.o_b.eq(0x1f - s[2:])
-                ]
+            with m.Else():
             # Increase colors or total brightness
-            with m.If(self.red | self.bright):
+                with m.If(self.red | self.bright):
+                    m.d.sync += [
+                        self.o_r.eq(Mux(c_r + self.val > 0x1f, 0x1f, Mux(c_r + self.val < 0, 0, c_r + self.val)))
+                    ]
+                with m.If(self.green | self.bright):
+                    m.d.sync += [
+                        self.o_g.eq(Mux(c_g + self.val > 0x3f, 0x3f, Mux(c_g + self.val < 0, 0, c_g + self.val)))
+                    ]
+                with m.If(self.blue | self.bright):
+                    m.d.sync += [
+                        self.o_b.eq(Mux(c_b + self.val > 0x1f, 0x1f, Mux(c_b + self.val < 0, 0, c_b + self.val)))
+                    ]
+
+            # Draw a border
+            with m.If(self.border & ((c_x == 0) | (c_x == self.res_x - 1) | (c_y == 0) | (c_y == self.res_y - 1))):
                 m.d.sync += [
-                    self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, Mux(self.i_r + self.val < 0, 0, self.i_r + self.val)))
-                ]
-            with m.If(self.green | self.bright):
-                m.d.sync += [
-                    self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, Mux(self.i_g + self.val < 0, 0, self.i_g + self.val)))
-                ]
-            with m.If(self.blue | self.bright):
-                m.d.sync += [
-                    self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, Mux(self.i_b + self.val < 0, 0, self.i_b + self.val)))
+                    self.o_r.eq(0),
+                    self.o_g.eq(0),
+                    self.o_b.eq(0x1f)
                 ]
 
         return m
