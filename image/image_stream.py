@@ -27,6 +27,7 @@ class ImageStream(Elaboratable):
         self.blue        = Signal()
         self.mono        = Signal()
         self.invert      = Signal()
+        self.threshold   = Signal()
         self.border      = Signal()
 
     def elaborate(self, platform):
@@ -79,11 +80,11 @@ class ImageStream(Elaboratable):
                 cl.eq(Mux(cl == 2, 0, cl + 1))
             ]
 
+        # Current pixel with optional convert to monochrome and optional invert
         c_r = Signal(5)
         c_g = Signal(6)
         c_b = Signal(5)
 
-        # Convert to monochrome
         with m.If(self.mono):
             m.d.comb += [
                 c_r.eq(Mux(self.invert, 0x1f - s[2:], s[2:])),
@@ -96,6 +97,17 @@ class ImageStream(Elaboratable):
                 c_g.eq(self.i_g),
                 c_r.eq(self.i_r)
             ]
+
+        # New values with val added or subtracted
+        n_r = Signal(signed(6))
+        n_g = Signal(signed(7))
+        n_b = Signal(signed(6))
+
+        m.d.comb += [
+            n_r.eq(c_r + self.val),
+            n_g.eq(c_g + self.val),
+            n_b.eq(c_b + self.val)
+        ]
 
         # Process pixel when valid set, and set ready
         with m.If(self.valid):
@@ -134,15 +146,15 @@ class ImageStream(Elaboratable):
             # Increase colors or total brightness
                 with m.If(self.red | self.bright):
                     m.d.sync += [
-                        self.o_r.eq(Mux(c_r + self.val > 0x1f, 0x1f, Mux(c_r + self.val < 0, 0, c_r + self.val)))
+                        self.o_r.eq(Mux(n_r > 0x1f, 0x1f, Mux(n_r < 0, 0, n_r)))
                     ]
                 with m.If(self.green | self.bright):
                     m.d.sync += [
-                        self.o_g.eq(Mux(c_g + self.val > 0x3f, 0x3f, Mux(c_g + self.val < 0, 0, c_g + self.val)))
+                        self.o_g.eq(Mux(n_g > 0x3f, 0x3f, Mux(n_g < 0, 0, n_g)))
                     ]
                 with m.If(self.blue | self.bright):
                     m.d.sync += [
-                        self.o_b.eq(Mux(c_b + self.val > 0x1f, 0x1f, Mux(c_b + self.val < 0, 0, c_b + self.val)))
+                        self.o_b.eq(Mux(n_b > 0x1f, 0x1f, Mux(n_b < 0, 0, n_b)))
                     ]
 
             # Draw a border
