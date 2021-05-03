@@ -181,8 +181,8 @@ class CamTest(Elaboratable):
             ims.invert.eq(sw8.sw5),
             ims.mono.eq(sw0),
             ims.bright.eq(sw1),
-            ims.xflip.eq(sw2),
-            ims.yflip.eq(sw3),
+            ims.x_flip.eq(sw2),
+            ims.y_flip.eq(sw3),
             ims.val.eq(val)
         ]
 

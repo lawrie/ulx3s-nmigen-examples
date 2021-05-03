@@ -19,8 +19,8 @@ class ImageStream(Elaboratable):
         self.o_b         = Signal(5)
         self.val         = Signal(signed(6))
         self.edge        = Signal()
-        self.xflip       = Signal()
-        self.yflip       = Signal()
+        self.x_flip      = Signal()
+        self.y_flip     = Signal()
         self.bright      = Signal()
         self.red         = Signal()
         self.green       = Signal()
@@ -30,6 +30,15 @@ class ImageStream(Elaboratable):
 
     def elaborate(self, platform):
         m = Module()
+
+        # Apply x_flip and yflip
+        c_x = Signal(10)
+        c_y = Signal(10)
+
+        m.d.comb += [
+            c_x.eq(Mux(self.x_flip, self.res_x - 1 - self.i_x, self.i_x)),
+            c_y.eq(Mux(self.y_flip, self.res_y - 1 - self.i_y, self.i_y))
+        ]
 
         # Line buffer
         buffer = Memory(width=16, depth=self.res_x * 3)
@@ -56,12 +65,13 @@ class ImageStream(Elaboratable):
         ]
 
         m.d.sync += [
+            # Default ready to false
             self.ready.eq(0),
             p_s.eq(s)
         ]
 
         # When at end of line, update line pointers
-        with m.If((self.i_x == self.res_x - 1) & (self.valid)):
+        with m.If((c_x == self.res_x - 1) & (self.valid)):
             m.d.sync += [
                 ppl.eq(pl),
                 pl.eq(cl),
@@ -72,18 +82,18 @@ class ImageStream(Elaboratable):
         with m.If(self.valid):
             m.d.sync += [
                 self.ready.eq(1),
-                # Horizontal and vertical flip
-                self.o_x.eq(Mux(self.xflip, self.res_x - 1 - self.i_x, self.i_x)),
-                self.o_y.eq(Mux(self.yflip, self.res_y - 1 - self.i_y, self.i_y)),
+                # Set output x and y with horizontal and vertical flip
+                self.o_x.eq(c_x),
+                self.o_y.eq(c_y),
                 # Copy input pixel by default
                 self.o_r.eq(self.i_r),
                 self.o_g.eq(self.i_g),
                 self.o_b.eq(self.i_b),
-                # Write pixel to xurrent line
-                w.addr.eq(cl * 320 + self.i_x),
+                # Write pixel to current line
+                w.addr.eq(cl * self.res_x + c_x),
                 w.data.eq(Cat(self.i_b, self.i_g, self.i_r)),
                 # Get the pixel above the current one
-                r.addr.eq(pl * 320 + self.i_x),
+                r.addr.eq(pl * self.res_x + c_x),
                 above.eq(r.data)
             ]
             # Simple edge detection
