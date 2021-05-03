@@ -17,7 +17,7 @@ class ImageStream(Elaboratable):
         self.o_r         = Signal(5)
         self.o_g         = Signal(6)
         self.o_b         = Signal(5)
-        self.val         = Signal(signed(6))
+        self.val         = Signal(signed(7))
         self.edge        = Signal()
         self.x_flip      = Signal()
         self.y_flip     = Signal()
@@ -110,13 +110,6 @@ class ImageStream(Elaboratable):
                         self.o_g.eq(0),
                         self.o_b.eq(0)
                     ]
-            # Increase brightness
-            with m.If(self.bright):
-                m.d.sync += [
-                    self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val)),
-                    self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, self.i_g + self.val)),
-                    self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, self.i_b + self.val))
-                ]
             # Convert to monochrome
             with m.If(self.mono):
                 m.d.sync += [
@@ -131,18 +124,18 @@ class ImageStream(Elaboratable):
                     self.o_g.eq(0x3f - s[1:]),
                     self.o_b.eq(0x1f - s[2:])
                 ]
-            # Increase colors
-            with m.If(self.red):
+            # Increase colors or total brightness
+            with m.If(self.red | self.bright):
                 m.d.sync += [
-                    self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, self.i_r + self.val))
+                    self.o_r.eq(Mux(self.i_r + self.val > 0x1f, 0x1f, Mux(self.i_r + self.val < 0, 0, self.i_r + self.val)))
                 ]
-            with m.If(self.green):
+            with m.If(self.green | self.bright):
                 m.d.sync += [
-                    self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, self.i_g + self.val))
+                    self.o_g.eq(Mux(self.i_g + self.val > 0x3f, 0x3f, Mux(self.i_g + self.val < 0, 0, self.i_g + self.val)))
                 ]
-            with m.If(self.blue):
+            with m.If(self.blue | self.bright):
                 m.d.sync += [
-                    self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, self.i_b + self.val))
+                    self.o_b.eq(Mux(self.i_b + self.val > 0x1f, 0x1f, Mux(self.i_b + self.val < 0, 0, self.i_b + self.val)))
                 ]
 
         return m

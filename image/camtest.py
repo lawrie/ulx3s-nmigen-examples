@@ -103,6 +103,7 @@ class CamTest(Elaboratable):
         leds = Cat([i.o for i in led])
         ov7670 = platform.request("ov7670")
         btn1 = platform.request("button_fire", 0)
+        btn2 = platform.request("button_fire", 1)
         up = platform.request("button_up", 0)
         down = platform.request("button_down", 0)
         sw0 = platform.request("switch",0)
@@ -148,9 +149,13 @@ class CamTest(Elaboratable):
         debdown = Debouncer()
         m.submodules.debdown = debdown
 
+        debres = Debouncer()
+        m.submodules.debres = debres
+
         m.d.comb += [
             debup.btn.eq(up),
-            debdown.btn.eq(down)
+            debdown.btn.eq(down),
+            debres.btn.eq(btn2)
         ]
 
         with m.If(debup.btn_down):
@@ -158,6 +163,9 @@ class CamTest(Elaboratable):
 
         with m.If(debdown.btn_down):
             m.d.sync += val.eq(val-1)
+
+        with m.If(debres.btn_down):
+            m.d.sync += val.eq(0)
 
         # Image stream
         max_r = Signal(5)
