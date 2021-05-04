@@ -28,10 +28,28 @@ class ImageStream(Elaboratable):
         self.mono        = Signal()
         self.invert      = Signal()
         self.threshold   = Signal()
+        self.gamma       = Signal()
         self.border      = Signal()
 
     def elaborate(self, platform):
         m = Module()
+
+        gamma32 = [0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 7,
+                   8, 9, 10, 12, 13, 14, 16, 17, 19, 20, 22, 24, 25, 27, 29, 31]
+
+        gamma64 = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 3, 3, 4,
+                   4, 5, 5, 6, 6, 7, 8, 8, 9, 10, 11, 12, 12, 13, 14, 15,
+                   16, 17, 18, 19, 21, 22, 23, 24, 25, 27, 28, 29, 31, 32, 34, 35,
+                   37, 38, 40, 41, 43, 45, 46, 48, 50, 52, 53, 55, 57, 59, 61, 63]
+
+        gr_tab = Memory(width=5, depth=32,init=gamma32)
+        m.submodules.gr = gr = gr_tab.read_port()
+
+        gg_tab = Memory(width=6, depth=64,init=gamma64)
+        m.submodules.gg = gg = gg_tab.read_port()
+
+        gb_tab = Memory(width=5, depth=32,init=gamma32)
+        m.submodules.gb = gb = gb_tab.read_port()
 
         # Apply x_flip and yflip
         c_x = Signal(10)
@@ -97,6 +115,30 @@ class ImageStream(Elaboratable):
                 c_g.eq(self.i_g),
                 c_r.eq(self.i_r)
             ]
+        
+        # Apply optional gamma correction
+        g_r = Signal(5)
+        g_g = Signal(6)
+        g_b = Signal(5)
+
+        m.d.comb += [
+            gr.addr.eq(c_r),
+            gg.addr.eq(c_g),
+            gb.addr.eq(c_b),
+        ]
+
+        with m.If(self.gamma):
+            m.d.comb += [
+                g_r.eq(gr.data),
+                g_g.eq(gg.data),
+                g_b.eq(gb.data)
+            ]
+        with m.Else():
+            m.d.comb += [
+                g_r.eq(c_r),
+                g_g.eq(c_g),
+                g_b.eq(c_b)
+            ]
 
         # New values with val added or subtracted
         n_r = Signal(signed(6))
@@ -104,9 +146,9 @@ class ImageStream(Elaboratable):
         n_b = Signal(signed(6))
 
         m.d.comb += [
-            n_r.eq(c_r + self.val),
-            n_g.eq(c_g + self.val),
-            n_b.eq(c_b + self.val)
+            n_r.eq(g_r + self.val),
+            n_g.eq(g_g + self.val),
+            n_b.eq(g_b + self.val)
         ]
 
         # Process pixel when valid set, and set ready
@@ -117,9 +159,9 @@ class ImageStream(Elaboratable):
                 self.o_x.eq(c_x),
                 self.o_y.eq(c_y),
                 # Copy input pixel by default
-                self.o_r.eq(c_r),
-                self.o_g.eq(c_g),
-                self.o_b.eq(c_b),
+                self.o_r.eq(g_r),
+                self.o_g.eq(g_g),
+                self.o_b.eq(g_b),
                 # Write pixel to current line
                 w.addr.eq(cl * self.res_x + c_x),
                 w.data.eq(Cat(self.i_b, self.i_g, self.i_r)),
