@@ -29,7 +29,10 @@ class ImageStream(Elaboratable):
         self.invert      = Signal()
         self.threshold   = Signal()
         self.gamma       = Signal()
+        self.filter      = Signal()
         self.border      = Signal()
+        self.p_x         = Signal(10)
+        self.p_y         = Signal(10)
 
     def elaborate(self, platform):
         m = Module()
@@ -109,13 +112,55 @@ class ImageStream(Elaboratable):
                 c_g.eq(Mux(self.invert, 0x3f - s[1:], s[1:])),
                 c_b.eq(Mux(self.invert, 0x1f - s[2:], s[2:]))
             ]
+        with m.Elif(self.filter):
+            with m.If((self.i_r > self.val)):
+                m.d.comb += [
+                    c_r.eq(0x1f),
+                    c_g.eq(0),
+                    c_b.eq(0)
+                ]
+            with m.Else():
+                m.d.comb += [
+                    c_r.eq(0),
+                    c_g.eq(0),
+                    c_b.eq(0)
+                ]
         with m.Else():
             m.d.comb += [
                 c_r.eq(self.i_r),
                 c_g.eq(self.i_g),
-                c_r.eq(self.i_r)
+                c_b.eq(self.i_b)
             ]
-        
+
+        # Calculate laser mouse pointer
+        min_x = Signal(10)
+        max_x = Signal(10)
+        min_y = Signal(10)
+        max_y = Signal(10)
+
+        with m.If((self.i_x == 0) & (self.i_y == 0)):
+            m.d.sync += [
+                min_x.eq(0),
+                min_y.eq(0),
+                max_x.eq(0),
+                max_y.eq(0)
+            ]
+
+        with m.If(self.i_r > self.val):
+            with m.If ((min_x == 0) | (c_x < min_x)):
+                m.d.sync += min_x.eq(c_x)
+            with m.If((max_x == 0) | (c_x > max_x)):
+                m.d.sync += max_x.eq(c_x)
+            with m.If((min_y == 0) | (c_y < min_y)):
+                m.d.sync += min_y.eq(c_y)
+            with m.If((max_y == 0) | (c_y > max_y)):
+                m.d.sync += max_y.eq(c_y)
+
+        m.d.comb += [
+            self.p_x.eq(min_x + ((max_x - min_x) >> 1)),
+            self.p_y.eq(min_y + ((max_y - min_y) >> 1))
+        ]
+
         # Apply optional gamma correction
         g_r = Signal(5)
         g_g = Signal(6)

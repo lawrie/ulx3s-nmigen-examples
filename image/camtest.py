@@ -189,6 +189,7 @@ class CamTest(Elaboratable):
             ims.invert.eq(sw8.sw5),
             ims.border.eq(sw8.sw6),
             ims.gamma.eq(sw8.sw7),
+            ims.filter.eq(sw8.sw8),
             ims.mono.eq(sw0),
             ims.bright.eq(sw1),
             ims.x_flip.eq(sw2),
@@ -211,7 +212,7 @@ class CamTest(Elaboratable):
             ]
 
         # Show value on leds
-        m.d.comb += leds.eq(val)
+        m.d.comb += leds.eq(ims.p_x)
 
         # VGA signal generator.
         vga_r = Signal(8)
