@@ -11,6 +11,7 @@ from ecp5pll import ECP5PLL
 
 from spi_osd import SpiOsd
 from spi_ram_btn import SpiRamBtn
+from ps2 import PS2
 
 gpdi_resource = [
     # GPDI
@@ -33,6 +34,10 @@ esp32_spi = [
         Subsignal("cipo", Pins("K1", dir="o")),
         Subsignal("sclk", Pins("L1", dir="i")),
         Attrs(PULLMODE="NONE", DRIVE="4", IO_TYPE="LVCMOS33"))
+]
+
+ps2_pullup = [
+    Resource("ps2_pullup", 0, Pins("C12", dir="o") , Attrs(IO_TYPE="LVCMOS33", DRIVE="16"))
 ]
 
 class Top(Elaboratable):
@@ -59,6 +64,9 @@ class Top(Elaboratable):
             leds = Cat([platform.request("led", i) for i in range(8)])
             btn = Cat([platform.request("button",i) for i in range(6)])
             pwr = platform.request("button_pwr")
+            usb = platform.request("usb")
+            ps2_pullup = platform.request("ps2_pullup")
+
             esp32 = platform.request("esp32_spi")
             csn = esp32.csn
             sclk = esp32.sclk
@@ -119,6 +127,8 @@ class Top(Elaboratable):
             #SpiRamBtn
             m.submodules.rambtn = rambtn = SpiRamBtn()
 
+            m.submodules.ps2 = ps2 = PS2()
+
             m.d.comb += [
                 # Connect rambtn
                 rambtn.csn.eq(~csn),
@@ -132,7 +142,12 @@ class Top(Elaboratable):
                 rambtn.din.eq(r.data),
                 w.data.eq(rambtn.dout),
                 w.addr.eq(rambtn.addr),
-                w.en.eq(rambtn.wr & (rambtn.addr[24:] == 0))
+                w.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
+                # PS/2 keyboard
+                usb.pullup.eq(1),
+                ps2_pullup.eq(1),
+                ps2.ps2_clk.eq(usb.d_p),
+                ps2.ps2_data.eq(usb.d_n),
             ]
 
             # OSD
@@ -149,7 +164,8 @@ class Top(Elaboratable):
                 osd.i_blank.eq(vga.o_vga_blank),
                 # led diagnostics
                 #leds.eq(Cat([csn, sclk, copi, cipo, irq, rambtn.rd, rambtn.wr, osd.o_osd_en]))
-                leds.eq(osd.diag)
+                #leds.eq(osd.diag)
+                leds.eq(ps2.data)
             ]
             
             with m.If(vga.o_beam_y < 240):
@@ -250,6 +266,7 @@ if __name__ == "__main__":
     # can reference it below.
     platform.add_resources(gpdi_resource)
     platform.add_resources(esp32_spi)
+    platform.add_resources(ps2_pullup)
 
     m = Module()
     m.submodules.top = top = Top(timing=vga_timings['640x480@60Hz'])
