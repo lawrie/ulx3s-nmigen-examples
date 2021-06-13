@@ -111,8 +111,12 @@ class Top(Elaboratable):
                 bits_y            = 16  # a smaller/larger value will make it pass timing.
             )
 
-            #SpiRamBtn
+            # Use 4Kb of BRAM
+            mem = Memory(width=8, depth=4096)
+            m.submodules.r = r = mem.read_port()
+            m.submodules.w = w = mem.write_port()
 
+            #SpiRamBtn
             m.submodules.rambtn = rambtn = SpiRamBtn()
 
             m.d.comb += [
@@ -122,7 +126,13 @@ class Top(Elaboratable):
                 rambtn.copi.eq(copi),
                 rambtn.btn.eq(Cat(~pwr,btn)),
                 cipo.eq(rambtn.cipo),
-                irq.eq(~rambtn.irq)
+                irq.eq(~rambtn.irq),
+                # Connect memory
+                r.addr.eq(rambtn.addr),
+                rambtn.din.eq(r.data),
+                w.data.eq(rambtn.dout),
+                w.addr.eq(rambtn.addr),
+                w.en.eq(rambtn.wr & (rambtn.addr[24:] == 0))
             ]
 
             # OSD
