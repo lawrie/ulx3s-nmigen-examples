@@ -14,6 +14,7 @@ from spi_ram_btn import SpiRamBtn
 from ps2 import PS2
 from core import Core
 from readhex import readhex
+from video import Video
 
 gpdi_resource = [
     # GPDI
@@ -54,6 +55,18 @@ pmod_led8_1 = [
         Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
 ]
 
+pmod_led8_2 = [
+    Resource("led8_2", 0, 
+        Subsignal("leds", Pins("21+ 22+ 23+ 24+ 21- 22- 23- 24-", dir="o", conn=("gpio",0))), 
+        Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
+]
+
+pmod_led8_3 = [
+    Resource("led8_3", 0, 
+        Subsignal("leds", Pins("14+ 15+ 16+ 17+ 14- 15- 16- 17-", dir="o", conn=("gpio",0))), 
+        Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
+]
+
 class Top(Elaboratable):
     def __init__(self,
                  timing: VGATiming, # VGATiming class
@@ -85,6 +98,10 @@ class Top(Elaboratable):
             led8_1 = platform.request("led8_1")
             leds8_1 = Cat([led8_1.leds[i] for i in range(8)])
             leds16 = Cat(leds8_0, leds8_1)
+            led8_2 = platform.request("led8_2")
+            leds8_2 = Cat([led8_2.leds[i] for i in range(8)])
+            led8_3 = platform.request("led8_3")
+            leds8_3 = Cat([led8_3.leds[i] for i in range(8)])
 
             esp32 = platform.request("esp32_spi")
             csn = esp32.csn
@@ -122,8 +139,8 @@ class Top(Elaboratable):
 
             # CPU clock domains
             clk_freq = platform.default_clk_frequency
-            timer = Signal(range(0, int(clk_freq // 2)),
-                           reset=int(clk_freq // 2) - 1)
+            timer = Signal(range(0, int(clk_freq // 256)),
+                           reset=int(clk_freq // 256) - 1)
             tick = Signal()
             sync = ClockDomain()
             cpu_control = Signal(8)
@@ -189,6 +206,14 @@ class Top(Elaboratable):
             # Add PS/2 keyboard controller
             m.submodules.ps2 = ps2 = PS2()
 
+            # Add character rom and video controller
+            font = readhex("roms/charrom.mem")
+
+            charrom = Memory(width=8,depth=len(font))
+            m.submodules.chr = chr = charrom.read_port()
+
+            m.submodules.video = video = Video()
+
             m.d.comb += [
                 # Connect rambtn
                 rambtn.csn.eq(~csn),
@@ -199,7 +224,7 @@ class Top(Elaboratable):
                 irq.eq(~rambtn.irq),
                 # Connect memory
                 dr.addr.eq(cpu.Addr),
-                rambtn.din.eq(vr.data),
+                #rambtn.din.eq(vr.data),
                 cw.data.eq(rambtn.dout),
                 cw.addr.eq(rambtn.addr),
                 cw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
@@ -208,8 +233,9 @@ class Top(Elaboratable):
                     Mux(cpu.Addr[13:] == 0, dr.data, cr.data)))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
-                dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
-                vr.addr.eq(rambtn.addr),
+                #dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
+                dw.en.eq(~cpu.RW & (cpu.Addr[13:] == 0)),
+                vr.addr.eq(0x200 + video.c_addr),
                 # PS/2 keyboard
                 usb.pullup.eq(1),
                 ps2_pullup.eq(1),
@@ -238,6 +264,10 @@ class Top(Elaboratable):
             m.submodules.osd = osd = SpiOsd(start_x=62, start_y=80, chars_x=64, chars_y=20)
 
             m.d.comb += [
+                # Connect video
+                video.x.eq(vga.o_beam_x),
+                video.y.eq(vga.o_beam_y),
+                video.din.eq(vr.data),
                 # Connect osd
                 osd.i_csn.eq(~csn),
                 osd.i_sclk.eq(sclk),
@@ -248,7 +278,9 @@ class Top(Elaboratable):
                 osd.i_blank.eq(vga.o_vga_blank),
                 # led diagnostics
                 #leds.eq(cpu.Din),
-                leds.eq(db),
+                leds.eq(vr.data),
+                leds8_2.eq(0x12),
+                leds8_3.eq(0x34),
                 leds16.eq(cpu.Addr)
             ]
             
@@ -353,6 +385,8 @@ if __name__ == "__main__":
     platform.add_resources(ps2_pullup)
     platform.add_resources(pmod_led8_0)
     platform.add_resources(pmod_led8_1)
+    platform.add_resources(pmod_led8_2)
+    platform.add_resources(pmod_led8_3)
 
     m = Module()
     m.submodules.top = top = Top(timing=vga_timings['640x480@60Hz'])
