@@ -12,6 +12,8 @@ from ecp5pll import ECP5PLL
 from spi_osd import SpiOsd
 from spi_ram_btn import SpiRamBtn
 from ps2 import PS2
+from core import Core
+from readhex import readhex
 
 gpdi_resource = [
     # GPDI
@@ -40,6 +42,18 @@ ps2_pullup = [
     Resource("ps2_pullup", 0, Pins("C12", dir="o") , Attrs(IO_TYPE="LVCMOS33", DRIVE="16"))
 ]
 
+pmod_led8_0 = [
+    Resource("led8_0", 0, 
+        Subsignal("leds", Pins("0+ 1+ 2+ 3+ 0- 1- 2- 3-", dir="o", conn=("gpio",0))), 
+        Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
+]
+
+pmod_led8_1 = [
+    Resource("led8_1", 0, 
+        Subsignal("leds", Pins("7+ 8+ 9+ 10+ 7- 8- 9- 10-", dir="o", conn=("gpio",0))), 
+        Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
+]
+
 class Top(Elaboratable):
     def __init__(self,
                  timing: VGATiming, # VGATiming class
@@ -66,6 +80,11 @@ class Top(Elaboratable):
             pwr = platform.request("button_pwr")
             usb = platform.request("usb")
             ps2_pullup = platform.request("ps2_pullup")
+            led8_0 = platform.request("led8_0")
+            leds8_0 = Cat([led8_0.leds[i] for i in range(8)])
+            led8_1 = platform.request("led8_1")
+            leds8_1 = Cat([led8_1.leds[i] for i in range(8)])
+            leds16 = Cat(leds8_0, leds8_1)
 
             esp32 = platform.request("esp32_spi")
             csn = esp32.csn
@@ -98,6 +117,38 @@ class Top(Elaboratable):
             platform.add_clock_constraint(cd_pixel.clk, pixel_f)
             platform.add_clock_constraint(cd_shift.clk, pixel_f * 5.0 * (1.0 if self.ddr else 2.0))
 
+            m.domains.ph1 = ph1 = ClockDomain("ph1")
+            m.domains.ph2 = ph2 = ClockDomain("ph2", clk_edge="neg")
+
+            # CPU clock domains
+            clk_freq = platform.default_clk_frequency
+            timer = Signal(range(0, int(clk_freq // 2)),
+                           reset=int(clk_freq // 2) - 1)
+            tick = Signal()
+            sync = ClockDomain()
+            cpu_control = Signal(8)
+            spi_load = Signal()
+            ca = Signal(8)
+            da = Signal(8)
+            cb = Signal(8)
+            db = Signal(8)
+
+            with m.If(timer == 0):
+                m.d.sync += timer.eq(timer.reset)
+                m.d.sync += tick.eq(~tick)
+            with m.Else():
+                m.d.sync += timer.eq(timer - 1)
+            m.d.comb += [
+                ph1.rst.eq(sync.rst),
+                ph2.rst.eq(sync.rst),
+                ph1.clk.eq(tick),
+                ph2.clk.eq(~tick),
+            ]
+
+            # Add CPU
+            cpu = Core()
+            m.submodules += cpu
+
             # VGA signal generator.
             vga_r = Signal(8)
             vga_g = Signal(8)
@@ -119,14 +170,23 @@ class Top(Elaboratable):
                 bits_y            = 16  # a smaller/larger value will make it pass timing.
             )
 
-            # Use 4Kb of BRAM
-            mem = Memory(width=8, depth=4096)
-            m.submodules.r = r = mem.read_port()
-            m.submodules.w = w = mem.write_port()
+            # Use 1Kb of RAM
+            ram = Memory(width=8, depth=1024)
+            m.submodules.dr = dr = ram.read_port()
+            m.submodules.vr = vr = ram.read_port()
+            m.submodules.dw = dw = ram.write_port()
 
-            #SpiRamBtn
+            # And 8kb of ROM
+            rom_data = readhex("roms/apf_4000.mem")
+
+            rom = Memory(width=8, depth=8192, init=rom_data)
+            m.submodules.cr = cr = rom.read_port()
+            m.submodules.cw = cw = rom.write_port()
+
+            # Add SpiRamBtn for OSD control
             m.submodules.rambtn = rambtn = SpiRamBtn()
 
+            # Add PS/2 keyboard controller
             m.submodules.ps2 = ps2 = PS2()
 
             m.d.comb += [
@@ -138,17 +198,41 @@ class Top(Elaboratable):
                 cipo.eq(rambtn.cipo),
                 irq.eq(~rambtn.irq),
                 # Connect memory
-                r.addr.eq(rambtn.addr),
-                rambtn.din.eq(r.data),
-                w.data.eq(rambtn.dout),
-                w.addr.eq(rambtn.addr),
-                w.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
+                dr.addr.eq(cpu.Addr),
+                rambtn.din.eq(vr.data),
+                cw.data.eq(rambtn.dout),
+                cw.addr.eq(rambtn.addr),
+                cw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
+                cr.addr.eq(cpu.Addr),
+                cpu.Din.eq(Mux(cpu.Addr == 0xffff, 0x00, Mux(cpu.Addr == 0xfffe, 0x40, 
+                    Mux(cpu.Addr[13:] == 0, dr.data, cr.data)))),
+                dw.addr.eq(cpu.Addr),
+                dw.data.eq(cpu.Dout),
+                dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
+                vr.addr.eq(rambtn.addr),
                 # PS/2 keyboard
                 usb.pullup.eq(1),
                 ps2_pullup.eq(1),
                 ps2.ps2_clk.eq(usb.d_p),
                 ps2.ps2_data.eq(usb.d_n),
+                spi_load.eq(cpu_control[1])
             ]
+
+            # CPU control from ESP32
+            with m.If(rambtn.wr & (rambtn.addr[24:] == 0xFF)):
+                m.d.sync += cpu_control.eq(rambtn.dout)
+
+            # PIA control and data registers
+            with m.If(~cpu.RW & cpu.VMA & cpu.Addr[13]):
+                with m.Switch(cpu.Addr[:2]):
+                    with m.Case(0):
+                         m.d.sync += da.eq(cpu.Dout)
+                    with m.Case(1):
+                         m.d.sync += ca.eq(cpu.Dout)
+                    with m.Case(2):
+                         m.d.sync += db.eq(cpu.Dout)
+                    with m.Case(3):
+                         m.d.sync += cb.eq(cpu.Dout)
 
             # OSD
             m.submodules.osd = osd = SpiOsd(start_x=62, start_y=80, chars_x=64, chars_y=20)
@@ -163,9 +247,9 @@ class Top(Elaboratable):
                 osd.i_vsync.eq(vga.o_vga_vsync),
                 osd.i_blank.eq(vga.o_vga_blank),
                 # led diagnostics
-                #leds.eq(Cat([csn, sclk, copi, cipo, irq, rambtn.rd, rambtn.wr, osd.o_osd_en]))
-                #leds.eq(osd.diag)
-                leds.eq(ps2.data)
+                #leds.eq(cpu.Din),
+                leds.eq(db),
+                leds16.eq(cpu.Addr)
             ]
             
             with m.If(vga.o_beam_y < 240):
@@ -267,6 +351,8 @@ if __name__ == "__main__":
     platform.add_resources(gpdi_resource)
     platform.add_resources(esp32_spi)
     platform.add_resources(ps2_pullup)
+    platform.add_resources(pmod_led8_0)
+    platform.add_resources(pmod_led8_1)
 
     m = Module()
     m.submodules.top = top = Top(timing=vga_timings['640x480@60Hz'])
@@ -281,3 +367,4 @@ if __name__ == "__main__":
         m.d.comb += gpdi[i].p.eq(top.o_gpdi_dp[i])
 
     platform.build(m, do_program=True, nextpnr_opts="--timing-allow-fail")
+
