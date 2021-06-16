@@ -21,6 +21,8 @@ class Video(Elaboratable):
         self.x       = Signal(10)
         self.y       = Signal(10)
         self.din     = Signal(8)
+        self.fin     = Signal(8)
+        self.mode    = Signal(2)
 
         # outputs
         self.c_addr = Signal(9)
@@ -38,6 +40,7 @@ class Video(Elaboratable):
         col    = Signal(5)
         pixcol = Signal(4)
         lin    = Signal(5)
+        pixrow = Signal(3)
         pixel  = Signal(24)
         border = Signal()
 
@@ -52,11 +55,13 @@ class Video(Elaboratable):
             self.r.eq(Mux(border, 0x00, pixel[16:])),
             self.g.eq(Mux(border, 0x00, pixel[8:16])),
             self.b.eq(Mux(border, 0x00, pixel[:8])),
+            pixrow.eq(lin[1:] - 2),
+            self.f_addr.eq(Cat(pixrow, self.din[:6])),
             border.eq((self.x < self.BORDER_X) | (self.x >= 640 - self.BORDER_X) |
                       (self.y < self.BORDER_Y) | (self.y >= 480 - self.BORDER_Y))
         ]
 
-        m.d.pixel += pixel.eq(colors[7])
+        m.d.pixel += pixel.eq(self.BLACK)
 
         with m.If((self.y == self.BORDER_Y) & (self.x == 0)):
             m.d.pixel += [
@@ -71,24 +76,27 @@ class Video(Elaboratable):
                     lin.eq(0)
                 ]
 
-        # Semigraphics mode
-        with m.If(self.din[7]):
-            with m.If((pixcol < 8) & (lin < 12)):
-                m.d.pixel += pixel.eq(Mux(self.din[3], colors[self.din[4:7]], 0))
-            with m.If((pixcol >= 8) & (lin < 12)):
-                m.d.pixel += pixel.eq(Mux(self.din[2], colors[self.din[4:7]], 0))
-            with m.If((pixcol < 8) & (lin >= 12)):
-                m.d.pixel += pixel.eq(Mux(self.din[1], colors[self.din[4:7]], 0))
-            with m.If((pixcol >= 8) & (lin >= 12)):
-                m.d.pixel += pixel.eq(Mux(self.din[0], colors[self.din[4:7]], 0))
-        with m.Else():
-            with m.If((lin >= 4) & (lin <= 20)):  
-                m.d.pixel += [
-                    self.f_addr.eq(Cat((lin[1:] - 2), self.din[:6])),
-                    pixel.eq(self.GREEN)
-                ]
-            with m.Else():
-                m.d.pixel += pixel.eq(self.DARK_GREEN)
+        with m.If (self.mode[1] == 0):
+            # Semigraphics mode
+            with m.If(self.din[7]): # Block graphics
+                m.d.pixel += pixel.eq(self.WHITE)
+                with m.If((pixcol < 8) & (lin < 12)):
+                    m.d.pixel += pixel.eq(Mux(self.din[3], colors[self.din[4:7]], self.BLACK))
+                with m.If((pixcol >= 8) & (lin < 12)):
+                    m.d.pixel += pixel.eq(Mux(self.din[2], colors[self.din[4:7]], self.BLACK))
+                with m.If((pixcol < 8) & (lin >= 12)):
+                    m.d.pixel += pixel.eq(Mux(self.din[1], colors[self.din[4:7]], self.BLACK))
+                with m.If((pixcol >= 8) & (lin >= 12)):
+                    m.d.pixel += pixel.eq(Mux(self.din[0], colors[self.din[4:7]], self.BLACK))
+            with m.Else(): # Text
+                with m.If((lin >= 4) & (lin < 20)):  
+                    m.d.pixel += [
+                        pixel.eq(Mux(self.fin.bit_select(7 - pixcol[1:], 1), self.GREEN, self.DARK_GREEN))
+                    ]
+                with m.Else():
+                    m.d.pixel += pixel.eq(self.DARK_GREEN)
+        with m.Else(): # High resolution graphics
+            m.d.pixel += pixel.eq(self.YELLOW)
 
         return m
 

@@ -209,8 +209,8 @@ class Top(Elaboratable):
             # Add character rom and video controller
             font = readhex("roms/charrom.mem")
 
-            charrom = Memory(width=8,depth=len(font))
-            m.submodules.chr = chr = charrom.read_port()
+            charrom = Memory(width=8,depth=512, init=font)
+            m.submodules.fr = fr = charrom.read_port()
 
             m.submodules.video = video = Video()
 
@@ -224,7 +224,7 @@ class Top(Elaboratable):
                 irq.eq(~rambtn.irq),
                 # Connect memory
                 dr.addr.eq(cpu.Addr),
-                #rambtn.din.eq(vr.data),
+                rambtn.din.eq(vr.data),
                 cw.data.eq(rambtn.dout),
                 cw.addr.eq(rambtn.addr),
                 cw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
@@ -233,9 +233,8 @@ class Top(Elaboratable):
                     Mux(cpu.Addr[13:] == 0, dr.data, cr.data)))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
-                #dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
-                dw.en.eq(~cpu.RW & (cpu.Addr[13:] == 0)),
-                vr.addr.eq(0x200 + video.c_addr),
+                dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
+                vr.addr.eq(Mux(spi_load, rambtn.addr, 0x200 + video.c_addr)),
                 # PS/2 keyboard
                 usb.pullup.eq(1),
                 ps2_pullup.eq(1),
@@ -268,6 +267,9 @@ class Top(Elaboratable):
                 video.x.eq(vga.o_beam_x),
                 video.y.eq(vga.o_beam_y),
                 video.din.eq(vr.data),
+                video.fin.eq(fr.data),
+                video.mode.eq(db[6:]),
+                fr.addr.eq(video.f_addr),
                 # Connect osd
                 osd.i_csn.eq(~csn),
                 osd.i_sclk.eq(sclk),
@@ -283,7 +285,7 @@ class Top(Elaboratable):
                 #leds.eq(cpu.Din),
                 leds.eq(vr.data),
                 leds8_2.eq(db),
-                leds8_3.eq(ca),
+                leds8_3.eq(fr.addr),
                 leds16.eq(cpu.Addr)
             ]
             
