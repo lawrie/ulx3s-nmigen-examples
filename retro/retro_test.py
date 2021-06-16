@@ -276,27 +276,17 @@ class Top(Elaboratable):
                 osd.i_hsync.eq(vga.o_vga_hsync),
                 osd.i_vsync.eq(vga.o_vga_vsync),
                 osd.i_blank.eq(vga.o_vga_blank),
+                osd.i_r.eq(video.r),
+                osd.i_g.eq(video.g),
+                osd.i_b.eq(video.b),
                 # led diagnostics
                 #leds.eq(cpu.Din),
                 leds.eq(vr.data),
-                leds8_2.eq(0x12),
-                leds8_3.eq(0x34),
+                leds8_2.eq(db),
+                leds8_3.eq(ca),
                 leds16.eq(cpu.Addr)
             ]
             
-            with m.If(vga.o_beam_y < 240):
-                m.d.comb += [
-                    osd.i_r.eq(0xff),
-                    osd.i_g.eq(0),
-                    osd.i_b.eq(0)
-                ]
-            with m.Else():
-                m.d.comb += [
-                    osd.i_r.eq(0),
-                    osd.i_g.eq(0xff),
-                    osd.i_b.eq(0)
-                ]
-
             m.d.comb += [
                 vga.i_clk_en.eq(1),
                 vga.i_test_picture.eq(0),
