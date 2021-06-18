@@ -39,10 +39,12 @@ esp32_spi = [
         Attrs(PULLMODE="NONE", DRIVE="4", IO_TYPE="LVCMOS33"))
 ]
 
+# Pullup resistor for setting USB to PS/2 mode
 ps2_pullup = [
     Resource("ps2_pullup", 0, Pins("C12", dir="o") , Attrs(IO_TYPE="LVCMOS33", DRIVE="16"))
 ]
 
+# Diagnostic led Pmods
 pmod_led8_0 = [
     Resource("led8_0", 0, 
         Subsignal("leds", Pins("0+ 1+ 2+ 3+ 0- 1- 2- 3-", dir="o", conn=("gpio",0))), 
@@ -67,13 +69,16 @@ pmod_led8_3 = [
         Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
 ]
 
+# Implements the APF M1000 Games console
 class Top(Elaboratable):
     def __init__(self,
                  timing: VGATiming, # VGATiming class
                  xadjustf=0, # adjust -3..3 if no picture
                  yadjustf=0, # or to fine-tune f
                  ddr=True): # False: SDR, True: DDR
+
         self.o_gpdi_dp = Signal(4)
+
         # Configuration
         self.timing = timing
         self.x = timing.x
@@ -111,7 +116,7 @@ class Top(Elaboratable):
             irq  = esp32.irq
 
             # Constants
-            pixel_f     = self.timing.pixel_freq
+            pixel_f           = self.timing.pixel_freq
             hsync_front_porch = self.timing.h_front_porch
             hsync_pulse_width = self.timing.h_sync_pulse
             hsync_back_porch  = self.timing.h_back_porch
@@ -135,12 +140,12 @@ class Top(Elaboratable):
             platform.add_clock_constraint(cd_shift.clk, pixel_f * 5.0 * (1.0 if self.ddr else 2.0))
 
             m.domains.ph1 = ph1 = ClockDomain("ph1")
-            m.domains.ph2 = ph2 = ClockDomain("ph2", clk_edge="neg")
+            m.domains.ph2 = ph2 = ClockDomain("ph2")
 
             # CPU clock domains
             clk_freq = platform.default_clk_frequency
-            timer = Signal(range(0, int(clk_freq // 256)),
-                           reset=int(clk_freq // 256) - 1)
+            timer = Signal(range(0, int(7)),
+                           reset=int(7 - 1))
             tick = Signal()
             sync = ClockDomain()
             cpu_control = Signal(8)
@@ -173,6 +178,15 @@ class Top(Elaboratable):
             vga_hsync = Signal()
             vga_vsync = Signal()
             vga_blank = Signal()
+            r_vsync   = Signal()
+
+            m.d.sync += r_vsync.eq(vga_vsync)
+
+            with m.If(vga_vsync & ~r_vsync):
+                m.d.sync += cpu.IRQ.eq(1)
+
+            with m.If(cpu.RW & (cpu.Addr == 0x2002)):
+                m.d.sync += cpu.IRQ.eq(0)
 
             m.submodules.vga = vga = VGA(
                 resolution_x      = self.timing.x,
@@ -229,12 +243,14 @@ class Top(Elaboratable):
                 cw.addr.eq(rambtn.addr),
                 cw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
                 cr.addr.eq(cpu.Addr),
-                cpu.Din.eq(Mux(cpu.Addr == 0xffff, 0x00, Mux(cpu.Addr == 0xfffe, 0x40, 
-                    Mux(cpu.Addr[13:] == 0, dr.data, cr.data)))),
+                cpu.Din.eq(Mux(cpu.Addr == 0xffff, 0x00, Mux(cpu.Addr == 0xfffe, 0x40, # reset vector
+                           Mux(cpu.Addr == 0xfff9, 0xA4, Mux(cpu.Addr == 0xfff8, 0x42, # irq vector
+                           Mux(cpu.Addr[13:] == 0, dr.data, Mux(cpu.Addr[13:] == 2, cr.data, # ram or system rom
+                           Mux(cpu.Addr == 0x2000, 0x00, 0xff)))))))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
                 dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
-                vr.addr.eq(Mux(spi_load, rambtn.addr, 0x200 + video.c_addr)),
+                vr.addr.eq(Mux(spi_load, rambtn.addr, video.c_addr)),
                 # PS/2 keyboard
                 usb.pullup.eq(1),
                 ps2_pullup.eq(1),
@@ -283,9 +299,9 @@ class Top(Elaboratable):
                 osd.i_b.eq(video.b),
                 # led diagnostics
                 #leds.eq(cpu.Din),
-                leds.eq(vr.data),
+                leds.eq(cr.data),
                 leds8_2.eq(db),
-                leds8_3.eq(fr.addr),
+                leds8_3.eq(cr.addr),
                 leds16.eq(cpu.Addr)
             ]
             

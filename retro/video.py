@@ -25,7 +25,7 @@ class Video(Elaboratable):
         self.mode    = Signal(2)
 
         # outputs
-        self.c_addr = Signal(9)
+        self.c_addr = Signal(10)
         self.f_addr = Signal(9)
         self.r      = Signal(8)
         self.g      = Signal(8)
@@ -35,23 +35,28 @@ class Video(Elaboratable):
 
         m = Module()
 
-        xa     = Signal(10)
-        row    = Signal(4)
-        col    = Signal(5)
-        pixcol = Signal(4)
-        lin    = Signal(5)
-        pixrow = Signal(3)
-        pixel  = Signal(24)
-        border = Signal()
+        xa      = Signal(10)
+        ya      = Signal(9)
+        row     = Signal(4)
+        col     = Signal(5)
+        pixcol  = Signal(4)
+        lin     = Signal(5)
+        pixrow  = Signal(3)
+        pixel   = Signal(24)
+        border  = Signal()
+        mode    = Signal(2)
+        obj_lin = Signal(8)
 
         colors = Array([self.GREEN, self.YELLOW, self.BLUE, self.RED,
                         self.WHITE, self.CYAN, self.MAGENTA, self.ORANGE])
 
         m.d.comb += [
+            mode.eq(Mux((self.mode == 3) & (ya >= 64), 3, 0)),
             xa.eq(self.x - self.BORDER_X),
+            ya.eq(self.y - self.BORDER_Y),
             pixcol.eq(xa[:4]),
             col.eq(xa[4:]),
-            self.c_addr.eq(Cat(col,row)),
+            self.c_addr.eq(Mux(mode[1], Mux(xa[:4] == 14, 0x200 + Cat(ya[1:5], self.din[:5]), Cat(col, ya[5:])), 0x200 + Cat(col,row))),
             self.r.eq(Mux(border, 0x00, pixel[16:])),
             self.g.eq(Mux(border, 0x00, pixel[8:16])),
             self.b.eq(Mux(border, 0x00, pixel[:8])),
@@ -60,6 +65,9 @@ class Video(Elaboratable):
             border.eq((self.x < self.BORDER_X) | (self.x >= 640 - self.BORDER_X) |
                       (self.y < self.BORDER_Y) | (self.y >= 480 - self.BORDER_Y))
         ]
+
+        with m.If(mode[1] & (xa[:4] == 15)):
+            m.d.pixel += obj_lin.eq(self.din)
 
         m.d.pixel += pixel.eq(self.BLACK)
 
@@ -76,7 +84,7 @@ class Video(Elaboratable):
                     lin.eq(0)
                 ]
 
-        with m.If (self.mode[1] == 0):
+        with m.If (mode[1] == 0):
             # Semigraphics mode
             with m.If(self.din[7]): # Block graphics
                 m.d.pixel += pixel.eq(self.WHITE)
@@ -96,7 +104,7 @@ class Video(Elaboratable):
                 with m.Else():
                     m.d.pixel += pixel.eq(self.DARK_GREEN)
         with m.Else(): # High resolution graphics
-            m.d.pixel += pixel.eq(self.YELLOW)
+            m.d.pixel += pixel.eq(Mux(obj_lin.bit_select(7 - xa[1:4], 1), self.WHITE, self.BLACK))
 
         return m
 
