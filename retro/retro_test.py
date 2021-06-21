@@ -107,6 +107,7 @@ class Top(Elaboratable):
             leds8_2 = Cat([led8_2.leds[i] for i in range(8)])
             led8_3 = platform.request("led8_3")
             leds8_3 = Cat([led8_3.leds[i] for i in range(8)])
+            leds16_2 = Cat(leds8_3, leds8_2)
 
             esp32 = platform.request("esp32_spi")
             csn = esp32.csn
@@ -180,11 +181,14 @@ class Top(Elaboratable):
             vga_blank = Signal()
             r_vsync   = Signal()
 
+            # Save previous value of vsync
             m.d.sync += r_vsync.eq(vga_vsync)
 
+            # Vsync sets IRQ
             with m.If(vga_vsync & ~r_vsync):
                 m.d.sync += cpu.IRQ.eq(1)
 
+            # Reading PIA Data Register B clears the interrupt
             with m.If(cpu.RW & (cpu.Addr == 0x2002)):
                 m.d.sync += cpu.IRQ.eq(0)
 
@@ -298,10 +302,8 @@ class Top(Elaboratable):
                 osd.i_g.eq(video.g),
                 osd.i_b.eq(video.b),
                 # led diagnostics
-                #leds.eq(cpu.Din),
                 leds.eq(cr.data),
-                leds8_2.eq(db),
-                leds8_3.eq(cr.addr),
+                leds16_2.eq(cpu.sp),
                 leds16.eq(cpu.Addr)
             ]
             
@@ -409,4 +411,3 @@ if __name__ == "__main__":
         m.d.comb += gpdi[i].p.eq(top.o_gpdi_dp[i])
 
     platform.build(m, do_program=True, nextpnr_opts="--timing-allow-fail")
-

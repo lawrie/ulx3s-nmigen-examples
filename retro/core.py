@@ -911,6 +911,8 @@ class Core(Elaboratable):
 
         with m.If(self.cycle == 4):
             m.d.ph1 += self.sp.eq(self.Addr)
+
+        with m.If(self.cycle == 5):
             self.end_instr(m, LCat(self.tmp16[8:], self.Din))
 
     def JSR_BSR(self, m: Module):

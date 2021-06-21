@@ -57,7 +57,7 @@ class Video(Elaboratable):
             pixcol.eq(xa[:4]),
             col.eq(xa[4:]),
             self.c_addr.eq(Mux(mode[1], Mux(xa[:4] == 14, 0x200 + Cat(ya[1:5], self.din[:5]), Cat(col, ya[5:])), 0x200 + Cat(col,row))),
-            self.r.eq(Mux(border, 0x00, pixel[16:])),
+            self.r.eq(Mux(border, 0x80, pixel[16:])),
             self.g.eq(Mux(border, 0x00, pixel[8:16])),
             self.b.eq(Mux(border, 0x00, pixel[:8])),
             pixrow.eq(lin[1:] - 2),
