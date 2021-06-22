@@ -44,6 +44,13 @@ ps2_pullup = [
     Resource("ps2_pullup", 0, Pins("C12", dir="o") , Attrs(IO_TYPE="LVCMOS33", DRIVE="16"))
 ]
 
+stereo = [
+    Resource("stereo", 0,
+        Subsignal("l", Pins("E4 D3 C3 B3", dir="o")),
+        Subsignal("r", Pins("A3 B5 D5 C5", dir="o")),
+    )
+]
+
 # Diagnostic led Pmods
 pmod_led8_0 = [
     Resource("led8_0", 0, 
@@ -98,6 +105,7 @@ class Top(Elaboratable):
             pwr = platform.request("button_pwr")
             usb = platform.request("usb")
             ps2_pullup = platform.request("ps2_pullup")
+            stereo  = platform.request("stereo", 0)
             led8_0 = platform.request("led8_0")
             leds8_0 = Cat([led8_0.leds[i] for i in range(8)])
             led8_1 = platform.request("led8_1")
@@ -260,7 +268,8 @@ class Top(Elaboratable):
                 ps2_pullup.eq(1),
                 ps2.ps2_clk.eq(usb.d_p),
                 ps2.ps2_data.eq(usb.d_n),
-                spi_load.eq(cpu_control[1])
+                spi_load.eq(cpu_control[1]),
+                stereo.r.eq(stereo.l)
             ]
 
             # CPU control from ESP32
@@ -278,6 +287,7 @@ class Top(Elaboratable):
                          m.d.sync += db.eq(cpu.Dout)
                     with m.Case(3):
                          m.d.sync += cb.eq(cpu.Dout)
+                         m.d.sync += stereo.l.eq(Mux(cpu.Dout[3], 0x7, 0x0))
 
             # OSD
             m.submodules.osd = osd = SpiOsd(start_x=62, start_y=80, chars_x=64, chars_y=20)
@@ -393,6 +403,7 @@ if __name__ == "__main__":
     platform.add_resources(gpdi_resource)
     platform.add_resources(esp32_spi)
     platform.add_resources(ps2_pullup)
+    platform.add_resources(stereo)
     platform.add_resources(pmod_led8_0)
     platform.add_resources(pmod_led8_1)
     platform.add_resources(pmod_led8_2)

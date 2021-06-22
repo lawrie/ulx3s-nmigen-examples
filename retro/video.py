@@ -37,6 +37,7 @@ class Video(Elaboratable):
 
         xa      = Signal(10)
         ya      = Signal(9)
+        yb      = Signal(9)
         row     = Signal(4)
         col     = Signal(5)
         pixcol  = Signal(4)
@@ -56,7 +57,8 @@ class Video(Elaboratable):
             ya.eq(self.y - self.BORDER_Y),
             pixcol.eq(xa[:4]),
             col.eq(xa[4:]),
-            self.c_addr.eq(Mux(mode[1], Mux(xa[:4] == 14, 0x200 + Cat(ya[1:5], self.din[:5]), Cat(col, ya[5:])), 0x200 + Cat(col,row))),
+            yb.eq(ya - 64),
+            self.c_addr.eq(Mux(mode[1], Mux(xa[:4] == 14, 0x200 + Cat(ya[1:5], self.din[:5]), Cat(col, yb[5:])), 0x200 + Cat(col,row))),
             self.r.eq(Mux(border, 0x80, pixel[16:])),
             self.g.eq(Mux(border, 0x00, pixel[8:16])),
             self.b.eq(Mux(border, 0x00, pixel[:8])),
