@@ -35,7 +35,6 @@ class Video(Elaboratable):
 
         m = Module()
 
-        xa       = Signal(9)
         xb       = Signal(9)
         ya       = Signal(9)
         yb       = Signal(9)
@@ -52,6 +51,7 @@ class Video(Elaboratable):
         text_col = Signal(24)
         back_col = Signal(24)
         col_set  = Signal()
+        din      = Signal(8)
 
         colors = Array([self.GREEN, self.YELLOW, self.BLUE, self.RED,
                         self.WHITE, self.CYAN, self.MAGENTA, self.ORANGE])
@@ -60,21 +60,20 @@ class Video(Elaboratable):
             # Hack to set mode for Rocket Patrol
             mode.eq(Mux((self.mode == 3) & (ya >= 64), 3, 0)),
             # Adjusted x and y values
-            xa.eq(self.x - self.BORDER_X),
-            xb.eq(self.x - self.BORDER_X + 8), # Set to next object
+            xb.eq(self.x - self.BORDER_X + 16), # Set to next byte
             ya.eq(self.y - self.BORDER_Y),
             yb.eq(ya - 64),
             # Pixel column for graphics mode
-            pixcol.eq(xa[:4]),
+            pixcol.eq(xb[:4]),
             # Pixel column for font address
             pixrow.eq(lin[1:] - 2),
-            col.eq(xa[4:]),
-            invert.eq(self.din[6]),
+            col.eq(xb[4:]),
+            invert.eq(din[6]),
             text_col.eq(Mux(invert, self.DARK_GREEN, self.GREEN)),
             back_col.eq(Mux(invert, self.GREEN, self.DARK_GREEN)),
             # Set Address of byte to fetch from video memory
             self.c_addr.eq(Mux(mode[1], 
-                               Mux(xa[:4] == 14, 
+                               Mux(xb[:4] == 14, 
                                    0x200 + Cat(ya[1:5], self.din[:5]), Cat(xb[4:], yb[5:])), # graphics
                                    0x200 + Cat(col,row))),                                   # semi-graphics
             # Set color from border and pixel
@@ -82,17 +81,20 @@ class Video(Elaboratable):
             self.g.eq(Mux(border, 0x00, pixel[8:16])),
             self.b.eq(Mux(border, 0x00, pixel[:8])),
             # Set font address
-            self.f_addr.eq(Cat(pixrow, self.din[:6])), # 64 characters 8X12
+            self.f_addr.eq(Cat(pixrow, din[:6])), # 64 characters 8X12
             # Set border
             border.eq((self.x < (self.BORDER_X + 1)) | (self.x >= 640 - (self.BORDER_X + 1)) |
                       (self.y < self.BORDER_Y) | (self.y >= 480 - self.BORDER_Y))
         ]
 
         # In graphics mode, set the line of an object on the cycle before the object starts
-        with m.If(mode[1] & (xa[:4] == 15)):
+        with m.If(mode[1] & (xb[:4] == 15)):
             m.d.pixel += obj_lin.eq(self.din)
         with m.Else():
             m.d.pixel += col_set.eq(self.din[5])
+
+        with m.If(~mode[1] & (xb[:4] == 15)):
+            m.d.pixel += din.eq(self.din)
 
         # Calculate character row and line within row, for semigraphics mode
         with m.If((self.y == self.BORDER_Y) & (self.x == 0)):
@@ -110,15 +112,15 @@ class Video(Elaboratable):
 
         # Set pixel according to mode
         with m.If (mode[1] == 0): # Semigraphics mode
-            with m.If(self.din[7]): # Block graphics
+            with m.If(din[7]): # Block graphics
                 with m.If((pixcol < 8) & (lin < 12)):
-                    m.d.pixel += pixel.eq(Mux(self.din[3], colors[self.din[4:7]], self.BLACK))
+                    m.d.pixel += pixel.eq(Mux(din[3], colors[din[4:7]], self.BLACK))
                 with m.If((pixcol >= 8) & (lin < 12)):
-                    m.d.pixel += pixel.eq(Mux(self.din[2], colors[self.din[4:7]], self.BLACK))
+                    m.d.pixel += pixel.eq(Mux(din[2], colors[din[4:7]], self.BLACK))
                 with m.If((pixcol < 8) & (lin >= 12)):
-                    m.d.pixel += pixel.eq(Mux(self.din[1], colors[self.din[4:7]], self.BLACK))
+                    m.d.pixel += pixel.eq(Mux(din[1], colors[din[4:7]], self.BLACK))
                 with m.If((pixcol >= 8) & (lin >= 12)):
-                    m.d.pixel += pixel.eq(Mux(self.din[0], colors[self.din[4:7]], self.BLACK))
+                    m.d.pixel += pixel.eq(Mux(din[0], colors[din[4:7]], self.BLACK))
             with m.Else(): # Text
                 with m.If((lin >= 4) & (lin < 20)):  
                     m.d.pixel += [
@@ -128,7 +130,7 @@ class Video(Elaboratable):
                     m.d.pixel += pixel.eq(back_col)
         with m.Else(): # High resolution graphics
             # TODO Multi-color mode
-            m.d.pixel += pixel.eq(Mux(obj_lin.bit_select(7 - xa[1:4], 1), Mux(col_set, self.GREEN, self.WHITE), self.BLACK))
+            m.d.pixel += pixel.eq(Mux(obj_lin.bit_select(7 - xb[1:4], 1), Mux(col_set, self.GREEN, self.WHITE), self.BLACK))
 
         return m
 
