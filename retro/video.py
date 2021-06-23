@@ -35,22 +35,23 @@ class Video(Elaboratable):
 
         m = Module()
 
-        xa      = Signal(9)
-        xb      = Signal(9)
-        ya      = Signal(9)
-        yb      = Signal(9)
-        row     = Signal(4)
-        col     = Signal(5)
-        pixcol  = Signal(4)
-        lin     = Signal(5)
-        pixrow  = Signal(3)
-        pixel   = Signal(24)
-        border  = Signal()
-        mode    = Signal(2)
-        obj_lin = Signal(8)
-        invert  = Signal()
+        xa       = Signal(9)
+        xb       = Signal(9)
+        ya       = Signal(9)
+        yb       = Signal(9)
+        row      = Signal(4)
+        col      = Signal(5)
+        pixcol   = Signal(4)
+        lin      = Signal(5)
+        pixrow   = Signal(3)
+        pixel    = Signal(24)
+        border   = Signal()
+        mode     = Signal(2)
+        obj_lin  = Signal(8)
+        invert   = Signal()
         text_col = Signal(24)
         back_col = Signal(24)
+        col_set  = Signal()
 
         colors = Array([self.GREEN, self.YELLOW, self.BLUE, self.RED,
                         self.WHITE, self.CYAN, self.MAGENTA, self.ORANGE])
@@ -90,6 +91,8 @@ class Video(Elaboratable):
         # In graphics mode, set the line of an object on the cycle before the object starts
         with m.If(mode[1] & (xa[:4] == 15)):
             m.d.pixel += obj_lin.eq(self.din)
+        with m.Else():
+            m.d.pixel += col_set.eq(self.din[5])
 
         # Calculate character row and line within row, for semigraphics mode
         with m.If((self.y == self.BORDER_Y) & (self.x == 0)):
@@ -124,7 +127,8 @@ class Video(Elaboratable):
                 with m.Else():
                     m.d.pixel += pixel.eq(back_col)
         with m.Else(): # High resolution graphics
-            m.d.pixel += pixel.eq(Mux(obj_lin.bit_select(7 - xa[1:4], 1), self.WHITE, self.BLACK))
+            # TODO Multi-color mode
+            m.d.pixel += pixel.eq(Mux(obj_lin.bit_select(7 - xa[1:4], 1), Mux(col_set, self.GREEN, self.WHITE), self.BLACK))
 
         return m
 
