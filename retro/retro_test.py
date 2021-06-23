@@ -227,12 +227,11 @@ class Top(Elaboratable):
 
             rom = Memory(width=8, depth=2048, init=rom_data)
             m.submodules.rr = rr = rom.read_port()
-            m.submodules.rw = rw = rom.write_port()
 
             # And 8kb of cartridge rom
-            #cart = Memory(width=8, depth=8192)
-            #m.submodules.cr = cr = rom.read_port()
-            #m.submodules.cw = cw = rom.write_port()
+            cart = Memory(width=8, depth=8192)
+            m.submodules.cr = cr = rom.read_port()
+            m.submodules.cw = cw = rom.write_port()
 
             # Add SpiRamBtn for OSD control
             m.submodules.rambtn = rambtn = SpiRamBtn()
@@ -259,18 +258,19 @@ class Top(Elaboratable):
                 # Connect memory
                 dr.addr.eq(cpu.Addr),
                 rambtn.din.eq(vr.data),
-                rw.data.eq(rambtn.dout),
-                rw.addr.eq(rambtn.addr),
-                rw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
+                cw.data.eq(rambtn.dout),
+                cw.addr.eq(rambtn.addr),
+                cw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
                 rr.addr.eq(cpu.Addr),
                 cpu.Din.eq(Mux(cpu.Addr == 0xffff, 0x00, Mux(cpu.Addr == 0xfffe, 0x40, # reset vector
                            Mux(cpu.Addr == 0xfff9, 0xA4, Mux(cpu.Addr == 0xfff8, 0x42, # irq vector
                            Mux(cpu.Addr[13:] == 0, dr.data, Mux(cpu.Addr[13:] == 2, rr.data, # ram or system rom
+                           Mux(cpu.Addr[14:] == 1, cr.data,
                            Mux(cpu.Addr == 0x2000, 
                                Mux(db[:3] == 5, Cat([Repl(1,2), ~r_btn[5], Repl(1,1), ~r_btn[4],  Repl(1,3)]), 
                                Mux(db[:3] == 6, Cat([Repl(1,4), ~r_btn[0], Repl(1,3)]), 
                                Mux(db[:3] == 7, Cat([Repl(1,4), ~r_btn[1], ~r_btn[2], Repl(1,2)]), 0xff))), 
-                            0xff)))))))),
+                            0xff))))))))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
                 dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
