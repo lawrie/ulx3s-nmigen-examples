@@ -222,12 +222,17 @@ class Top(Elaboratable):
             m.submodules.vr = vr = ram.read_port()
             m.submodules.dw = dw = ram.write_port()
 
-            # And 8kb of ROM
+            # And 2kb of ROM
             rom_data = readhex("roms/apf_4000.mem")
 
-            rom = Memory(width=8, depth=8192, init=rom_data)
-            m.submodules.cr = cr = rom.read_port()
-            m.submodules.cw = cw = rom.write_port()
+            rom = Memory(width=8, depth=2048, init=rom_data)
+            m.submodules.rr = rr = rom.read_port()
+            m.submodules.rw = rw = rom.write_port()
+
+            # And 8kb of cartridge rom
+            #cart = Memory(width=8, depth=8192)
+            #m.submodules.cr = cr = rom.read_port()
+            #m.submodules.cw = cw = rom.write_port()
 
             # Add SpiRamBtn for OSD control
             m.submodules.rambtn = rambtn = SpiRamBtn()
@@ -254,13 +259,13 @@ class Top(Elaboratable):
                 # Connect memory
                 dr.addr.eq(cpu.Addr),
                 rambtn.din.eq(vr.data),
-                cw.data.eq(rambtn.dout),
-                cw.addr.eq(rambtn.addr),
-                cw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
-                cr.addr.eq(cpu.Addr),
+                rw.data.eq(rambtn.dout),
+                rw.addr.eq(rambtn.addr),
+                rw.en.eq(rambtn.wr & (rambtn.addr[24:] == 0)),
+                rr.addr.eq(cpu.Addr),
                 cpu.Din.eq(Mux(cpu.Addr == 0xffff, 0x00, Mux(cpu.Addr == 0xfffe, 0x40, # reset vector
                            Mux(cpu.Addr == 0xfff9, 0xA4, Mux(cpu.Addr == 0xfff8, 0x42, # irq vector
-                           Mux(cpu.Addr[13:] == 0, dr.data, Mux(cpu.Addr[13:] == 2, cr.data, # ram or system rom
+                           Mux(cpu.Addr[13:] == 0, dr.data, Mux(cpu.Addr[13:] == 2, rr.data, # ram or system rom
                            Mux(cpu.Addr == 0x2000, 
                                Mux(db[:3] == 5, Cat([Repl(1,2), ~r_btn[5], Repl(1,1), ~r_btn[4],  Repl(1,3)]), 
                                Mux(db[:3] == 6, Cat([Repl(1,4), ~r_btn[0], Repl(1,3)]), 
@@ -394,7 +399,6 @@ class Top(Elaboratable):
 
         return m
 
-
 if __name__ == "__main__":
     variants = {
         '12F': ULX3S_12F_Platform,
@@ -434,3 +438,4 @@ if __name__ == "__main__":
         m.d.comb += gpdi[i].p.eq(top.o_gpdi_dp[i])
 
     platform.build(m, do_program=True, nextpnr_opts="--timing-allow-fail")
+
