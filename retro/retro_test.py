@@ -163,6 +163,9 @@ class Top(Elaboratable):
             da = Signal(8)
             cb = Signal(8)
             db = Signal(8)
+            r_btn = Signal(6)
+
+            m.d.sync += r_btn.eq(btn)
 
             with m.If(timer == 0):
                 m.d.sync += timer.eq(timer.reset)
@@ -258,7 +261,11 @@ class Top(Elaboratable):
                 cpu.Din.eq(Mux(cpu.Addr == 0xffff, 0x00, Mux(cpu.Addr == 0xfffe, 0x40, # reset vector
                            Mux(cpu.Addr == 0xfff9, 0xA4, Mux(cpu.Addr == 0xfff8, 0x42, # irq vector
                            Mux(cpu.Addr[13:] == 0, dr.data, Mux(cpu.Addr[13:] == 2, cr.data, # ram or system rom
-                           Mux(cpu.Addr == 0x2000, 0x00, 0xff)))))))),
+                           Mux(cpu.Addr == 0x2000, 
+                               Mux(db[:3] == 5, Cat([Repl(1,2), ~r_btn[5], Repl(1,1), ~r_btn[4],  Repl(1,3)]), 
+                               Mux(db[:3] == 6, Cat([Repl(1,4), ~r_btn[0], Repl(1,3)]), 
+                               Mux(db[:3] == 7, Cat([Repl(1,4), ~r_btn[1], ~r_btn[2], Repl(1,2)]), 0xff))), 
+                            0xff)))))))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
                 dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
@@ -289,6 +296,11 @@ class Top(Elaboratable):
                          m.d.sync += cb.eq(cpu.Dout)
                          m.d.sync += stereo.l.eq(Mux(cpu.Dout[3], 0x7, 0x0))
 
+            mode = Signal(2)
+
+            with m.If(~cpu.RW & (cpu.Addr == 0x1fc) & (cpu.Dout != 0)):
+                m.d.sync += mode.eq(0b11)
+
             # OSD
             m.submodules.osd = osd = SpiOsd(start_x=62, start_y=80, chars_x=64, chars_y=20)
 
@@ -298,7 +310,7 @@ class Top(Elaboratable):
                 video.y.eq(vga.o_beam_y),
                 video.din.eq(vr.data),
                 video.fin.eq(fr.data),
-                video.mode.eq(db[6:]),
+                video.mode.eq(mode),
                 fr.addr.eq(video.f_addr),
                 # Connect osd
                 osd.i_csn.eq(~csn),
@@ -312,7 +324,7 @@ class Top(Elaboratable):
                 osd.i_g.eq(video.g),
                 osd.i_b.eq(video.b),
                 # led diagnostics
-                leds.eq(cr.data),
+                leds.eq(db),
                 leds16_2.eq(cpu.sp),
                 leds16.eq(cpu.Addr)
             ]
