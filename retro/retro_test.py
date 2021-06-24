@@ -271,9 +271,9 @@ class Top(Elaboratable):
                            Mux(cpu.Addr == 0x2002, pia_drb,
                            Mux(cpu.Addr == 0x2000,  # PIA_DRA has keyboard row
                                Mux(pia_drb[:4] == C(0b1110, 4), Cat([~r_btn[0], Repl(1,7)]), 
-                               Mux(pia_drb[:4] == C(0b1101, 4), Cat([Repl(1,3), ~r_btn[4], Repl(1,1), ~r_btn[5], Repl(1,2)]),
+                               Mux(pia_drb[:4] == C(0b1101, 4), Cat([Repl(1,1), ~r_btn[5], Repl(1,1), ~r_btn[4], Repl(1,1), ~r_btn[5], Repl(1,1), ~r_btn[4]]),
                                Mux(pia_drb[:4] == C(0b1011, 4), Cat([Repl(1,8)]),
-                               Mux(pia_drb[:4] == C(0b0111, 4), Cat([Repl(1,4), ~r_btn[1:3], Repl(1,2)]), 0xff)))), 
+                               Mux(pia_drb[:4] == C(0b0111, 4), Cat([Repl(1,1), ~r_btn[2], Repl(1,2), ~r_btn[1:3], Repl(1,2)]), 0xff)))), 
                             0xff)))))))))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
