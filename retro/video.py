@@ -14,7 +14,7 @@ class Video(Elaboratable):
     ORANGE      = 0xff8100
     BLACK       = 0x000000
     DARK_GREEN  = 0x003c00
-    DRAK_ORANGE = 0x910000
+    DARK_ORANGE = 0x910000
 
     def __init__(self):
         # inputs
@@ -69,8 +69,8 @@ class Video(Elaboratable):
             pixrow.eq(lin[1:] - 2),
             col.eq(xb[4:]),
             invert.eq(din[6]),
-            text_col.eq(Mux(invert, self.DARK_GREEN, self.GREEN)),
-            back_col.eq(Mux(invert, self.GREEN, self.DARK_GREEN)),
+            text_col.eq(Mux(invert, Mux(self.mode[1], self.DARK_ORANGE, self.DARK_GREEN), Mux(self.mode[1], self.ORANGE,self.GREEN))),
+            back_col.eq(Mux(invert, Mux(self.mode[1], self.ORANGE, self.GREEN), Mux(self.mode[1], self.DARK_ORANGE, self.DARK_GREEN))),
             # Set Address of byte to fetch from video memory
             self.c_addr.eq(Mux(mode[1], 
                                Mux(xb[:4] == 14, 
