@@ -153,17 +153,19 @@ class Top(Elaboratable):
 
             # CPU clock domains
             clk_freq = platform.default_clk_frequency
-            timer = Signal(range(0, int(7)),
+            timer    = Signal(range(0, int(7)),
                            reset=int(7 - 1))
-            tick = Signal()
-            sync = ClockDomain()
+            tick     = Signal()
+            sync     = ClockDomain()
+
+
             cpu_control = Signal(8)
-            spi_load = Signal()
-            ca = Signal(8)
-            da = Signal(8)
-            cb = Signal(8)
-            db = Signal(8)
-            r_btn = Signal(6)
+            spi_load    = Signal()
+            pia_cra     = Signal(8)
+            pia_dra     = Signal(8)
+            pia_crb     = Signal(8)
+            pia_drb     = Signal(8)
+            r_btn       = Signal(6)
 
             m.d.sync += r_btn.eq(btn)
 
@@ -266,11 +268,13 @@ class Top(Elaboratable):
                            Mux(cpu.Addr == 0xfff9, 0xA4, Mux(cpu.Addr == 0xfff8, 0x42, # irq vector
                            Mux(cpu.Addr[13:] == 0, dr.data, Mux(cpu.Addr[13:] == 2, rr.data, # ram or system rom
                            Mux(cpu.Addr[14:] == 1, cr.data,
-                           Mux(cpu.Addr == 0x2000, 
-                               Mux(db[:3] == 5, Cat([Repl(1,2), ~r_btn[5], Repl(1,1), ~r_btn[4],  Repl(1,3)]), 
-                               Mux(db[:3] == 6, Cat([Repl(1,4), ~r_btn[0], Repl(1,3)]), 
-                               Mux(db[:3] == 7, Cat([Repl(1,4), ~r_btn[1], ~r_btn[2], Repl(1,2)]), 0xff))), 
-                            0xff))))))))),
+                           Mux(cpu.Addr == 0x2002, pia_drb,
+                           Mux(cpu.Addr == 0x2000,  # PIA_DRA has keyboard row
+                               Mux(pia_drb[:4] == C(0b1110, 4), Cat([~r_btn[0], Repl(1,7)]), 
+                               Mux(pia_drb[:4] == C(0b1101, 4), Cat([Repl(1,3), ~r_btn[4], Repl(1,1), ~r_btn[5], Repl(1,2)]),
+                               Mux(pia_drb[:4] == C(0b1011, 4), Cat([Repl(1,8)]),
+                               Mux(pia_drb[:4] == C(0b0111, 4), Cat([Repl(1,4), ~r_btn[1:3], Repl(1,2)]), 0xff)))), 
+                            0xff)))))))))),
                 dw.addr.eq(cpu.Addr),
                 dw.data.eq(cpu.Dout),
                 dw.en.eq(~cpu.RW & cpu.VMA & (cpu.Addr[13:] == 0)),
@@ -292,13 +296,13 @@ class Top(Elaboratable):
             with m.If(~cpu.RW & cpu.VMA & cpu.Addr[13]):
                 with m.Switch(cpu.Addr[:2]):
                     with m.Case(0):
-                         m.d.sync += da.eq(cpu.Dout)
+                         m.d.sync += pia_dra.eq(cpu.Dout)
                     with m.Case(1):
-                         m.d.sync += ca.eq(cpu.Dout)
+                         m.d.sync += pia_cra.eq(cpu.Dout)
                     with m.Case(2):
-                         m.d.sync += db.eq(cpu.Dout)
+                         m.d.sync += pia_drb.eq(cpu.Dout)
                     with m.Case(3):
-                         m.d.sync += cb.eq(cpu.Dout)
+                         m.d.sync += pia_crb.eq(cpu.Dout)
                          m.d.sync += stereo.l.eq(Mux(cpu.Dout[3], 0x7, 0x0))
 
             mode = Signal(2)
@@ -329,7 +333,7 @@ class Top(Elaboratable):
                 osd.i_g.eq(video.g),
                 osd.i_b.eq(video.b),
                 # led diagnostics
-                leds.eq(db),
+                leds.eq(pia_drb),
                 leds16_2.eq(cpu.sp),
                 leds16.eq(cpu.Addr)
             ]
