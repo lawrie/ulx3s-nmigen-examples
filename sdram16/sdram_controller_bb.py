@@ -26,7 +26,7 @@ class sdram_controller(Elaboratable):
             "cke":"-",
             "clk":"-",
             "clk_en":"-",
-            "dq":"io",
+            "dq":"-",
             "dqm":"-",
             "cas":"-",
             "cs":"-",
@@ -50,8 +50,6 @@ class sdram_controller(Elaboratable):
             sdram.cas.eq(ctrl.sd_cas),
             sdram.clk_en.eq(1),
             sdram.clk.eq(ClockSignal("sdram_clk")),
-            sdram.dq.o.eq(ctrl.sd_data_out),
-            sdram.dq.oe.eq(ctrl.sd_data_dir),
             # Set the controller input pins
             ctrl.init.eq(self.init),
             ctrl.din.eq(self.data_in),
@@ -60,10 +58,19 @@ class sdram_controller(Elaboratable):
             ctrl.oe.eq(self.req_read),
             ctrl.sync.eq(self.sync),
             ctrl.ds.eq(C(0b11,2)),
-            ctrl.sd_data_in.eq(sdram.dq.i),
             # Set output pins
             self.data_out.eq(ctrl.dout)
         ]
 
+        # Set dq to input or output depending on sd_data_dir
+        for i in range(16):
+            dq_io = Instance("BB",
+                io_B=sdram.dq[i],
+                i_T=~ctrl.sd_data_dir,
+                i_I=ctrl.sd_data_out[i],
+                o_O=ctrl.sd_data_in[i]
+            )
+
+            m.submodules += dq_io
         return m
 

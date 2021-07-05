@@ -46,13 +46,13 @@ class Top(Elaboratable):
         led8_3 = platform.request("led8_3")
         led16 =  [i for i in led8_0] + [i for i in led8_1]
         leds16 = Cat([i for i in led16])
-        led16_2 =  [i for i in led8_2] + [i for i in led8_3]
+        led16_2 =  [i for i in led8_3] + [i for i in led8_2]
         leds16_2 = Cat([i for i in led16_2])
         clk_in = platform.request(platform.default_clk, dir='-')[0]
 
         # Clock generation
         # PLL - 64MHz for sdram
-        sdram_freq = 280000000
+        sdram_freq = 100000000
         m.domains.sdram = cd_sdram = ClockDomain("sdram")
         m.domains.sdram_clk = cd_sdram_clk = ClockDomain("sdram_clk")
 
@@ -69,10 +69,10 @@ class Top(Elaboratable):
         m.domains.sync = cd_sync = ClockDomain("sync")
         m.d.comb += ClockSignal().eq(div[2])
 
-        # Power-on reset (not used)
-        reset = Signal(10, reset=0)
-        with m.If(~reset.all()):
-            m.d.sync += reset.eq(reset+1)
+        # Power-on reset, used to setup SDRAM as using pll.locked does not work
+        reset_cnt = Signal(5, reset=0)
+        with m.If(~reset_cnt.all()):
+            m.d.sync += reset_cnt.eq(reset_cnt+1)
 
         # Add the SDRAM controller
         m.submodules.mem = mem = sdram_controller()
@@ -87,18 +87,18 @@ class Top(Elaboratable):
         passed = Signal(1,  reset=0) # Set if test passed
 
         m.d.comb += [
-            mem.init.eq(~pll.locked), # Use pll not locked as signal to initialise SDRAM 
-            mem.sync.eq(div[2]),      # Sync with 8MHz clock
+            mem.init.eq(reset_cnt == 0), # Initialize SDRAM
+            mem.sync.eq(div[2]),         # Sync with sync domain clock
             mem.address.eq(addr),
             mem.req_read.eq(oe),
             mem.req_write.eq(we),
-            mem.data_in.eq(~addr[:16]), # Write most significant 16 bits of address
-            leds16_2.eq(addr[:16]),
-            leds16.eq(mem.data_out)   # Put the data read on the debug leds
+            mem.data_in.eq(addr[:16]),   # Write least significant 16 bits of address
+            leds16_2.eq(addr[:16]),      # Show the address on leds
+            leds16.eq(mem.data_out)      # Put the data read on the debug leds
         ]
 
         # Set the error flag if read gives the wrong value
-        with m.If((count > 0) & read & (mem.data_out != ~addr[:16])):
+        with m.If((count > 0) & read & (mem.data_out != addr[:16])):
             m.d.sync += err.eq(1)
 
         # Increment count and do transfer when count is 0
@@ -110,8 +110,7 @@ class Top(Elaboratable):
 
         # Increment address every other cycle for write or when
         # count is exhausted for reads
-        #with m.If(count.all()):
-        with m.If((~read & (count == 1)) | count.all()):
+        with m.If(reset_cnt.all() & ((~read & (count == 1)) | count.all())):
             with m.If(~read & (count == 1)):
                 m.d.sync += count.eq(0)
 
