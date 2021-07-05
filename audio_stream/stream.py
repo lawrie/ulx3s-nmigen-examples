@@ -28,7 +28,7 @@ class Stream(Elaboratable):
 
         m.d.comb += [
             serial.rx.ack.eq(1),
-            stereo.l.o.eq(pwm_acc[-1]),
+            stereo.l.o.eq(Mux(pwm_acc[-1], 0x7, 0x0)), # Not too loud
             stereo.r.o.eq(stereo.l.o)
         ]
 
