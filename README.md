@@ -615,8 +615,6 @@ This is just the cpu, without any connected ram or uart, so it doesn't do much.
 
 ### ov7670
 
-![ov7670](https://github.com/lawrie/lawrie.github.io/blob/master/images/mx_ov7670.jpg)
-
 Reads video from an OV7670 camera, and displays it in low resolution (60x60) on an st7789 color LCD display.
 
 Run camtest.py and press button 1 to configure the camera into RGB mode.
