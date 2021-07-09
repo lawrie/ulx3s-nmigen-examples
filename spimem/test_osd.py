@@ -4,7 +4,7 @@ from nmigen.build import *
 from nmigen import *
 from nmigen_boards.ulx3s import *
 
-from spi_ram_btn import SpiRamBtn
+from spi_osd import SpiOsd
 
 # Spi pins from ESP32 re-use two of the sd card pins
 esp32_spi = [
@@ -32,40 +32,19 @@ class Top(Elaboratable):
 
         m = Module()
 
-        rd   = Signal()    # Set when read requested
-        wr   = Signal()    # Set when write requested
-        addr = Signal(32)  # The requested address
-        din  = Signal(8)   # The data to be sent back
-        dout = Signal(8)   # The data to be written
+        m.domains.pixel = pixel = ClockDomain("pixel")
 
-        m.submodules.spimem = spimem = SpiRamBtn(addr_bits=32)
+        m.d.comb += ClockSignal("pixel").eq(ClockSignal())
 
-        # Use 4Kb of BRAM
-        mem = Memory(width=8, depth=4096)
-        m.submodules.r = r = mem.read_port()
-        m.submodules.w = w = mem.write_port()
+        m.submodules.osd = osd = SpiOsd()
 
         m.d.comb += [
-            # Connect spimem
-            spimem.csn.eq(~csn),
-            spimem.sclk.eq(sclk),
-            spimem.copi.eq(copi),
-            spimem.din.eq(din),
-            spimem.btn.eq(Cat(pwr, btn)),
-            cipo.eq(spimem.cipo),
-            addr.eq(spimem.addr),
-            dout.eq(spimem.dout),
-            rd.eq(spimem.rd),            
-            wr.eq(spimem.wr & (addr[24:] == 0)),
-            irq.eq(~spimem.irq),
-            # Connect memory
-            r.addr.eq(addr),
-            din.eq(r.data),
-            w.data.eq(dout),
-            w.addr.eq(addr),
-            w.en.eq(wr),
+            # Connect osd
+            osd.i_csn.eq(~csn),
+            osd.i_sclk.eq(sclk),
+            osd.i_copi.eq(copi),
             # led diagnostics
-            leds.eq(Cat([csn,sclk,copi,cipo,irq,rd,wr]))
+            leds.eq(Cat([csn,sclk,copi,cipo]))
         ]
 
         return m
