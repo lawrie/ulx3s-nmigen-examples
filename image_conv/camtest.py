@@ -132,7 +132,7 @@ class CamTest(Elaboratable):
         debup = Debouncer()
         m.submodules.debup = debup
 
-        val = Signal(unsigned(4), reset=0x2)
+        val = Signal(unsigned(4), reset=0)
         up_down = Signal()
 
         debdown = Debouncer()
