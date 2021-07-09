@@ -20,6 +20,8 @@ class Conv3(Elaboratable):
         self.o_p       = Signal(dw)
         self.o_valid   = Signal()
         self.o_stall   = Signal()
+        self.o_x       = Signal(bits_for(w), reset=self.w - 1)
+        self.o_y       = Signal(bits_for(h), reset=self.h - 1)
 
     def elaborate(self, platform):
         m = Module()
@@ -79,12 +81,11 @@ class Conv3(Elaboratable):
             r1.addr.eq(x2)
         ]
 
-        # Valid pixels start when started set
-        with m.If(~started): 
-            m.d.sync += self.o_valid.eq(0)
+        # Pixel not valid by default
+        m.d.sync += self.o_valid.eq(0)
 
         # Process pixel
-        with m.If(self.i_valid):
+        with m.If(self.i_valid | self.o_stall):
             # Save last values read for wraparound
             m.d.sync += [
                 pd0.eq(r0.data),
@@ -105,7 +106,9 @@ class Conv3(Elaboratable):
                     x.eq(0),
                     y.eq(0),
                     self.o_stall.eq(0),
-                    started.eq(0)
+                    started.eq(0),
+                    self.o_x.eq(self.w - 1),
+                    self.o_y.eq(self.h - 1)
                 ]
 
             # Pixel generation starts on row 1, column 1
@@ -152,6 +155,7 @@ class Conv3(Elaboratable):
                     p21.eq(Mux(y == self.h, Mux(x == 0, pd1, p12), self.i_p)),
                     # Generate the pixel
                     self.o_valid.eq(1),
+                    self.o_x.eq(self.o_x+1),
                     self.o_p.eq((p00 * self.k[0] +
                                  p01 * self.k[1] +
                                  p02 * self.k[2] +
@@ -162,6 +166,13 @@ class Conv3(Elaboratable):
                                  p21 * self.k[7] +
                                  p22 * self.k[8]) >> self.sh)
                 ]
+                with m.If(self.o_x == self.w - 1):
+                    m.d.sync += [
+                        self.o_y.eq(self.o_y + 1),
+                        self.o_x.eq(0)
+                    ]
+                    with m.If(self.o_y == self.h - 1):
+                        m.d.sync += self.o_y.eq(0)
 
         return m
  
