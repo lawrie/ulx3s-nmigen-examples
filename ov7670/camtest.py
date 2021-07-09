@@ -82,7 +82,7 @@ class CamTest(Elaboratable):
             camread.vsync.eq(ov7670.cam_VSYNC),
             camread.p_clock.eq(ov7670.cam_PCLK),
             w.en.eq(camread.pixel_valid),
-            w.addr.eq(((camread.row[1:] - 0) * 320) + camread.col[1:]),
+            w.addr.eq((camread.row[1:] * 320) + camread.col[1:]),
             w.data.eq(camread.pixel_data),
             r.addr.eq(((239 - st7789.x) * 320) + st7789.y),
             st7789.color.eq(r.data),
