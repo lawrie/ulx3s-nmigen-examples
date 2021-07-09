@@ -179,7 +179,8 @@ class CamTest(Elaboratable):
             ims.i_b.eq(fifo.r_data[0:5]),
             ims.sel.eq(val),
             ims.x_flip.eq(sw[0]),
-            ims.y_flip.eq(sw[1])
+            ims.y_flip.eq(sw[1]),
+            ims.mono.eq(sw[2])
         ]
 
         with m.If(ims.i_r > max_r):

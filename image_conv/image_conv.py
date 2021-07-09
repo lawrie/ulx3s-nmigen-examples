@@ -17,6 +17,7 @@ class ImageConv(Elaboratable):
         self.sel         = Signal(4)
         self.x_flip      = Signal()
         self.y_flip      = Signal()
+        self.mono        = Signal()
 
         # Outputs
         self.o_stall     = Signal()
@@ -30,6 +31,7 @@ class ImageConv(Elaboratable):
     def elaborate(self, platform):
         m = Module()
 
+        p_s = Signal(7)
         def connect(c, ch):
             m.d.comb += [
                 c.i_p.eq(ch),
@@ -37,11 +39,19 @@ class ImageConv(Elaboratable):
             ]
 
         def select(c_r, c_g, c_b):
-            m.d.comb += [
-                self.o_r.eq(c_r),
-                self.o_g.eq(c_g),
-                self.o_b.eq(c_b)
-            ]
+            with m.If(self.mono):
+                m.d.comb += [
+                    p_s.eq(c_r + c_g + c_b),
+                    self.o_r.eq(p_s[2:]),
+                    self.o_g.eq(p_s[1:]),
+                    self.o_b.eq(p_s[2:])
+                ]
+            with m.Else():
+                m.d.comb += [
+                    self.o_r.eq(c_r),
+                    self.o_g.eq(c_g),
+                    self.o_b.eq(c_b)
+                ]
 
         # Identity
         k_ident = Array([0,0,0,
