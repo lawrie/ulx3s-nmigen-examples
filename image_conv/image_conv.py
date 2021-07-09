@@ -15,6 +15,8 @@ class ImageConv(Elaboratable):
         self.i_g         = Signal(6)
         self.i_b         = Signal(5)
         self.sel         = Signal(4)
+        self.x_flip      = Signal()
+        self.y_flip      = Signal()
 
         # Outputs
         self.o_stall     = Signal()
@@ -102,8 +104,8 @@ class ImageConv(Elaboratable):
         m.d.comb += [
             self.o_stall.eq(ident_r.o_stall),
             self.o_valid.eq(ident_r.i_valid),
-            self.o_x.eq(ident_r.o_x),
-            self.o_y.eq(ident_r.o_y)
+            self.o_x.eq(Mux(self.x_flip, self.res_x - 1 - ident_r.o_x, ident_r.o_x)),
+            self.o_y.eq(Mux(self.y_flip, self.res_y - 1 - ident_r.o_y, ident_r.o_y))
         ]
 
         # Select the required convolution
