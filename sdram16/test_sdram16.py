@@ -51,7 +51,7 @@ class Top(Elaboratable):
         clk_in = platform.request(platform.default_clk, dir='-')[0]
 
         # Clock generation
-        # PLL - 64MHz for sdram
+        # PLL - 100MHz for sdram
         sdram_freq = 100000000
         m.domains.sdram = cd_sdram = ClockDomain("sdram")
         m.domains.sdram_clk = cd_sdram_clk = ClockDomain("sdram_clk")
