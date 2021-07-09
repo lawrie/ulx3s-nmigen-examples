@@ -81,8 +81,7 @@ class Conv3(Elaboratable):
             r1.addr.eq(x2)
         ]
 
-        # Valid pixels start when started set
-        #with m.If(~started): 
+        # Pixel not valid by default
         m.d.sync += self.o_valid.eq(0)
 
         # Process pixel
