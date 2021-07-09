@@ -66,7 +66,7 @@ class ST7789(Elaboratable):
                 delay_cnt.eq(delay_cnt - 1),
                 resn.eq(1)
             ]
-        with m.If(index[4:] != len(init_data)):
+        with m.Elif(index[4:] != len(init_data)):
             m.d.sync += index.eq(index+1)
             with m.If(index[0:4] == 0): # Start of byte
                 with m.If(init): # Still initialization
