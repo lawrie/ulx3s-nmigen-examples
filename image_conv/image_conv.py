@@ -77,6 +77,18 @@ class ImageConv(Elaboratable):
                         1, 2,  1])
         sh_blur = 4
 
+        # Emboss
+        k_emboss = Array([-2, -1,  0,
+                          -1,  1,  1,
+                           0 , 1,  2])
+        sh_emboss = 0
+
+        # Adjust color balance (not used)
+        k_bal = Array([0,0,0,
+                       0,3,0,
+                       0,0,0])
+        sh_bal = 2
+                   
         # Create the convolution modules
         m.submodules.blur_r = blur_r = Conv3(k_blur, w=self.res_x, h=self.res_y, dw=5,sh=sh_blur)
         m.submodules.blur_g = blur_g = Conv3(k_blur, w=self.res_x, h=self.res_y, dw=6,sh=sh_blur)
@@ -94,13 +106,21 @@ class ImageConv(Elaboratable):
         connect(edge_g, self.i_g)
         connect(edge_b, self.i_b)
 
-        m.submodules.sharp_r = sharp_r = Conv3(k_sharp, w=self.res_x, h=self.res_y, dw=5,sh=sh_sharp)
-        m.submodules.sharp_g = sharp_g = Conv3(k_sharp, w=self.res_x, h=self.res_y, dw=6,sh=sh_sharp)
-        m.submodules.sharp_b = sharp_b = Conv3(k_sharp, w=self.res_x, h=self.res_y, dw=5,sh=sh_sharp)
+        m.submodules.sharp_r = sharp_r = Conv3(k_sharp, w=self.res_x, h=self.res_y, dw=5,sh=sh_sharp,same=1)
+        m.submodules.sharp_g = sharp_g = Conv3(k_sharp, w=self.res_x, h=self.res_y, dw=6,sh=sh_sharp,same=1)
+        m.submodules.sharp_b = sharp_b = Conv3(k_sharp, w=self.res_x, h=self.res_y, dw=5,sh=sh_sharp,same=1)
 
         connect(sharp_r, self.i_r)
         connect(sharp_g, self.i_g)
         connect(sharp_b, self.i_b)
+
+        m.submodules.emboss_r = emboss_r = Conv3(k_emboss, w=self.res_x, h=self.res_y, dw=5,sh=sh_emboss,same=1)
+        m.submodules.emboss_g = emboss_g = Conv3(k_emboss, w=self.res_x, h=self.res_y, dw=6,sh=sh_emboss,same=1)
+        m.submodules.emboss_b = emboss_b = Conv3(k_emboss, w=self.res_x, h=self.res_y, dw=5,sh=sh_emboss,same=1)
+
+        connect(emboss_r, self.i_r)
+        connect(emboss_g, self.i_g)
+        connect(emboss_b, self.i_b)
 
         m.submodules.ident_r = ident_r = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=5,sh=sh_ident)
         m.submodules.ident_g = ident_g = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=6,sh=sh_ident)
@@ -125,6 +145,8 @@ class ImageConv(Elaboratable):
             with m.Case(2):
                 select(sharp_r.o_p, sharp_g.o_p, sharp_b.o_p)
             with m.Case(3):
+                select(emboss_r.o_p, emboss_g.o_p, emboss_b.o_p)
+            with m.Case(4):
                 select(edge_r.o_p, edge_g.o_p, edge_b.o_p)
             with m.Default():
                 select(ident_r.o_p, ident_g.o_p, ident_b.o_p)

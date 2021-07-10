@@ -4,13 +4,14 @@ from nmigen.utils import bits_for
 
 # Apply a convolution kernel to a stream of monochrome pixels or an RGB channel
 class Conv3(Elaboratable):
-    def __init__(self, k, sh=0, w=320, h=240, dw=8):
+    def __init__(self, k, sh=0, w=320, h=240, dw=8, same=0):
         # Parameters
         self.w         = w
         self.h         = h
         self.k         = k
         self.sh        = sh
         self.dw        = dw
+        self.same      = same
 
         # Inputs
         self.i_p       = Signal(dw)
@@ -84,6 +85,20 @@ class Conv3(Elaboratable):
         # Pixel not valid by default
         m.d.sync += self.o_valid.eq(0)
 
+        # New pixel value
+        n_p = Signal(self.dw + self.sh + 1)
+        m.d.comb += [
+            n_p.eq(p00 * self.k[0] +
+                   p01 * self.k[1] +
+                   p02 * self.k[2] +
+                   p10 * self.k[3] +
+                   p11 * self.k[4] +
+                   p12 * self.k[5] +
+                   p20 * self.k[6] +
+                   p21 * self.k[7] +
+                   p22 * self.k[8])
+        ]
+
         # Process pixel
         with m.If(self.i_valid | self.o_stall):
             # Save last values read for wraparound
@@ -156,15 +171,7 @@ class Conv3(Elaboratable):
                     # Generate the pixel
                     self.o_valid.eq(1),
                     self.o_x.eq(self.o_x+1),
-                    self.o_p.eq((p00 * self.k[0] +
-                                 p01 * self.k[1] +
-                                 p02 * self.k[2] +
-                                 p10 * self.k[3] +
-                                 p11 * self.k[4] +
-                                 p12 * self.k[5] +
-                                 p20 * self.k[6] +
-                                 p21 * self.k[7] +
-                                 p22 * self.k[8]) >> self.sh)
+                    self.o_p.eq((Mux(self.same & n_p[-1], (p11 << self.sh) , n_p) >> self.sh))
                 ]
                 with m.If(self.o_x == self.w - 1):
                     m.d.sync += [

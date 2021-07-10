@@ -168,6 +168,8 @@ class CamTest(Elaboratable):
         with m.If((camread.col == 639) & (camread.row == 0)):
             m.d.sync += sync_fifo.eq(1)
 
+        p_g = Signal(8)
+        
         # Connect fifo and ims
         m.d.comb += [
             fifo.w_en.eq(camread.pixel_valid & camread.col[0] & sync_fifo), # Only write every other pixel
@@ -175,7 +177,9 @@ class CamTest(Elaboratable):
             fifo.r_en.eq(fifo.r_rdy & ~ims.o_stall),
             ims.i_valid.eq(fifo.r_rdy),
             ims.i_r.eq(fifo.r_data[11:]),
-            ims.i_g.eq(fifo.r_data[5:11]),
+            # Multiple green value by 0.75
+            p_g.eq(fifo.r_data[5:11] * 3),
+            ims.i_g.eq(p_g[2:]),
             ims.i_b.eq(fifo.r_data[0:5]),
             ims.sel.eq(val),
             ims.x_flip.eq(sw[0]),
