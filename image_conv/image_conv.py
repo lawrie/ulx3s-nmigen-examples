@@ -77,6 +77,12 @@ class ImageConv(Elaboratable):
                         1, 2,  1])
         sh_blur = 4
 
+        # Box blur
+        k_box = Array([1, 1, 1,
+                       1, 1, 1,
+                       1, 1, 1])
+        sh_box = 3
+
         # Emboss
         k_emboss = Array([-2, -1,  0,
                           -1,  1,  1,
@@ -97,6 +103,14 @@ class ImageConv(Elaboratable):
         connect(blur_r, self.i_r)
         connect(blur_g, self.i_g)
         connect(blur_b, self.i_b)
+
+        m.submodules.box_r = box_r = Conv3(k_box, w=self.res_x, h=self.res_y, dw=5,sh=sh_box,same=1)
+        m.submodules.box_g = box_g = Conv3(k_box, w=self.res_x, h=self.res_y, dw=6,sh=sh_box,same=1)
+        m.submodules.box_b = box_b = Conv3(k_box, w=self.res_x, h=self.res_y, dw=5,sh=sh_box,same=1)
+
+        connect(box_r, self.i_r)
+        connect(box_g, self.i_g)
+        connect(box_b, self.i_b)
 
         m.submodules.edge_r = edge_r = Conv3(k_edge, w=self.res_x, h=self.res_y, dw=5,sh=sh_edge)
         m.submodules.edge_g = edge_g = Conv3(k_edge, w=self.res_x, h=self.res_y, dw=6,sh=sh_edge)
@@ -148,6 +162,8 @@ class ImageConv(Elaboratable):
                 select(emboss_r.o_p, emboss_g.o_p, emboss_b.o_p)
             with m.Case(4):
                 select(edge_r.o_p, edge_g.o_p, edge_b.o_p)
+            with m.Case(5):
+                select(box_r.o_p, box_g.o_p, box_b.o_p)
             with m.Default():
                 select(ident_r.o_p, ident_g.o_p, ident_b.o_p)
 
