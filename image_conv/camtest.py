@@ -15,6 +15,7 @@ from vga2dvid import VGA2DVID
 from vga import VGA
 from vga_timings import *
 from ecp5pll import ECP5PLL
+from osd import OSD
 
 # The GPDI pins are not defined in the ULX3S platform in nmigen_boards. I've created a
 # pull request, so until it is accepted and merged, we can define it here and add to
@@ -42,6 +43,18 @@ ov7670_pmod = [
              Subsignal("cam_XCLK", Pins("2-", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33",DRIVE="4")),
              Subsignal("cam_PWON", Pins("3+", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33",DRIVE="4")),
              Subsignal("cam_RESET", Pins("3-", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33",DRIVE="4")))
+]
+
+pmod_led8_2 = [
+    Resource("led8_2", 0,
+        Subsignal("leds", Pins("21+ 22+ 23+ 24+ 21- 22- 23- 24-", dir="o", conn=("gpio",0))),
+        Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
+]
+
+pmod_led8_3 = [
+    Resource("led8_3", 0,
+        Subsignal("leds", Pins("14+ 15+ 16+ 17+ 14- 15- 16- 17-", dir="o", conn=("gpio",0))),
+        Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
 ]
 
 class CamTest(Elaboratable):
@@ -72,6 +85,11 @@ class CamTest(Elaboratable):
 
         clk25 = platform.request("clk25")
         sw =  Cat([platform.request("switch",i) for i in range(4)])
+        led8_2 = platform.request("led8_2")
+        leds8_2 = Cat([led8_2.leds[i] for i in range(8)])
+        led8_3 = platform.request("led8_3")
+        leds8_3 = Cat([led8_3.leds[i] for i in range(8)])
+        leds16 = Cat(leds8_3, leds8_2)
 
         m = Module()
         
@@ -97,6 +115,9 @@ class CamTest(Elaboratable):
         btn2 = platform.request("button_fire", 1)
         up = platform.request("button_up", 0)
         down = platform.request("button_down", 0)
+        pwr = platform.request("button_pwr", 0)
+        left = platform.request("button_left", 0)
+        right = platform.request("button_right", 0)
 
         # Add CamRead submodule
         camread = CamRead()
@@ -141,10 +162,13 @@ class CamTest(Elaboratable):
         debres = Debouncer()
         m.submodules.debres = debres
 
+        m.submodules.debosd = debosd = Debouncer()
+
         m.d.comb += [
             debup.btn.eq(up),
             debdown.btn.eq(down),
-            debres.btn.eq(btn2)
+            debres.btn.eq(btn2),
+            debosd.btn.eq(pwr)
         ]
 
         with m.If(debup.btn_down):
@@ -161,6 +185,12 @@ class CamTest(Elaboratable):
         max_g = Signal(6)
         max_b = Signal(5)
 
+        avg_r = Signal(21)
+        avg_g = Signal(22)
+        avg_b = Signal(21)
+
+        frames = Signal(6)
+
         ims = ImageConv()
         m.submodules.image_stream = ims
 
@@ -168,7 +198,9 @@ class CamTest(Elaboratable):
         with m.If((camread.col == 639) & (camread.row == 0)):
             m.d.sync += sync_fifo.eq(1)
 
-        p_g = Signal(8)
+        p_r = Signal(8)
+        p_g = Signal(9)
+        p_b = Signal(8)
         
         # Connect fifo and ims
         m.d.comb += [
@@ -176,17 +208,19 @@ class CamTest(Elaboratable):
             fifo.w_data.eq(camread.pixel_data), 
             fifo.r_en.eq(fifo.r_rdy & ~ims.o_stall),
             ims.i_valid.eq(fifo.r_rdy),
-            ims.i_r.eq(fifo.r_data[11:]),
-            # Multiple green value by 0.75
-            p_g.eq(fifo.r_data[5:11] * 3),
-            ims.i_g.eq(p_g[2:]),
-            ims.i_b.eq(fifo.r_data[0:5]),
+            p_r.eq(fifo.r_data[11:] * 9),
+            ims.i_r.eq(p_r[3:]),
+            p_g.eq(fifo.r_data[5:11] * 6),
+            ims.i_g.eq(p_g[3:]),
+            p_b.eq(fifo.r_data[0:5] * 8),
+            ims.i_b.eq(p_b[3:]),
             ims.sel.eq(val),
             ims.x_flip.eq(sw[0]),
             ims.y_flip.eq(sw[1]),
             ims.mono.eq(sw[2])
         ]
 
+        # Calculate maximum for each color, each frame
         with m.If(ims.i_r > max_r):
             m.d.sync += max_r.eq(ims.i_r) 
         with m.If(ims.i_g > max_g):
@@ -194,12 +228,28 @@ class CamTest(Elaboratable):
         with m.If(ims.i_b > max_b):
             m.d.sync += max_b.eq(ims.i_b) 
 
+        # Calculate average looking at middle 256 x 256 pixels
+        with m.If(camread.col[0] & camread.pixel_valid):
+            with m.If((camread.col[1:] >= 32) & (camread.col[1:] < 288) & 
+                      (camread.row >= 112) & (camread.row < 368)):
+                m.d.sync += [
+                    avg_r.eq(avg_r + ims.i_r),
+                    avg_g.eq(avg_g + ims.i_g),
+                    avg_b.eq(avg_b + ims.i_b)
+                ]
+
         with m.If(camread.frame_done):
             m.d.sync += [
+                frames.eq(frames+1),
                 max_r.eq(0),
                 max_g.eq(0),
-                max_b.eq(0)
+                max_b.eq(0),
+                avg_r.eq(0),
+                avg_g.eq(0),
+                avg_b.eq(0)
             ]
+            with m.If(frames == 0):
+                m.d.sync += leds16.eq(Cat([avg_b[16:],avg_g[16:],avg_r[16:]]))
 
         # Show value on leds
         m.d.comb += leds.eq(val)
@@ -236,13 +286,31 @@ class CamTest(Elaboratable):
             r.addr.eq(vga.o_beam_y * 320 + vga.o_beam_x[1:])
         ]
 
+        # OSD
+        m.submodules.osd = osd = OSD()
+
+        osd_on = Signal()
+        with m.If(debosd.btn_down):
+            m.d.sync += osd_on.eq(~osd_on)
+
+        m.d.comb += [
+            osd.x.eq(vga.o_beam_x),
+            osd.y.eq(vga.o_beam_y),
+            osd.i_r.eq(Cat(Const(0, unsigned(3)), r.data[11:16])),
+            osd.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])),
+            osd.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])),
+            osd.on.eq(osd_on),
+            osd.osd_val.eq(Mux(val > 11, val - 12, val)),
+            osd.sel.eq(0),
+        ]
+
         # Generate VGA signals
         m.d.comb += [
             vga.i_clk_en.eq(1),
             vga.i_test_picture.eq(0),
-            vga.i_r.eq(Cat(Const(0, unsigned(3)), r.data[11:16])), 
-            vga.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])), 
-            vga.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])), 
+            vga.i_r.eq(osd.o_r), 
+            vga.i_g.eq(osd.o_g), 
+            vga.i_b.eq(osd.o_b), 
             vga_r.eq(vga.o_vga_r),
             vga_g.eq(vga.o_vga_g),
             vga_b.eq(vga.o_vga_b),
@@ -324,6 +392,8 @@ if __name__ == "__main__":
     m.submodules.top = top = CamTest(timing=vga_timings['640x480@60Hz'])
 
     platform.add_resources(ov7670_pmod)
+    platform.add_resources(pmod_led8_2)
+    platform.add_resources(pmod_led8_3)
 
     # Add the GPDI resource defined above to the platform so we
     # can reference it below.

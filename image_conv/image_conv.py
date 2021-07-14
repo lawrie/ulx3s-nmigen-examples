@@ -136,9 +136,9 @@ class ImageConv(Elaboratable):
         connect(emboss_g, self.i_g)
         connect(emboss_b, self.i_b)
 
-        m.submodules.ident_r = ident_r = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=5,sh=sh_ident)
-        m.submodules.ident_g = ident_g = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=6,sh=sh_ident)
-        m.submodules.ident_b = ident_b = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=5,sh=sh_ident)
+        m.submodules.ident_r = ident_r = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=5,sh=sh_ident,same=1)
+        m.submodules.ident_g = ident_g = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=6,sh=sh_ident,same=1)
+        m.submodules.ident_b = ident_b = Conv3(k_ident, w=self.res_x, h=self.res_y, dw=5,sh=sh_ident,same=1)
 
         connect(ident_r, self.i_r)
         connect(ident_g, self.i_g)
