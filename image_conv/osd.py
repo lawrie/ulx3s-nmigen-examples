@@ -17,6 +17,8 @@ class OSD(Elaboratable):
         self.x       = Signal(10)
         self.y       = Signal(10)
         self.sel     = Signal()
+        self.grid    = Signal()
+        self.border  = Signal()
 
         # outputs
         self.o_r     = Signal(8)
@@ -29,8 +31,9 @@ class OSD(Elaboratable):
         # Copy color by default
         m.d.sync += [
             self.o_r.eq(self.i_r),
-            self.o_g.eq(self.i_g),
-            self.o_b.eq(self.i_b)
+            self.o_g.eq(Mux(self.grid & (self.x[:6].all() | self.y[:6].all()), 0xff, self.i_g)),
+            self.o_b.eq(Mux(self.border & ((self.x < 2) | (self.x >= 638) | 
+                                            (self.y < 2) | (self.y >= 478)), 0xff, self.i_b))
         ]
 
         y_offset = Signal(10)

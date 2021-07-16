@@ -32,6 +32,7 @@ gpdi_resource = [
     Resource("gpdi_scl", 0, Pins("E12"),             Attrs(IO_TYPE="LVCMOS33",  DRIVE="4", PULLMODE="UP")),
 ]
 
+# Ulx3s OV7670 extended Pmod
 ov7670_pmod = [
     Resource("ov7670", 0,
              Subsignal("cam_data", Pins("10+ 10- 9+ 9- 8+ 8- 7+ 7-", dir="i", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33")),
@@ -45,19 +46,22 @@ ov7670_pmod = [
              Subsignal("cam_RESET", Pins("3-", dir="o", conn=("gpio", 0)), Attrs(IO_TYPE="LVCMOS33",DRIVE="4")))
 ]
 
+# Digilent 8LD Pmod
 pmod_led8_2 = [
     Resource("led8_2", 0,
         Subsignal("leds", Pins("21+ 22+ 23+ 24+ 21- 22- 23- 24-", dir="o", conn=("gpio",0))),
         Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
 ]
 
+# Digilent 8LD Pmod
 pmod_led8_3 = [
     Resource("led8_3", 0,
         Subsignal("leds", Pins("14+ 15+ 16+ 17+ 14- 15- 16- 17-", dir="o", conn=("gpio",0))),
         Attrs(IO_TYPE="LVCMOS33", DRIVE="4"))
 ]
 
-class CamTest(Elaboratable):
+# Camera application with image processing
+class Camera(Elaboratable):
     def __init__(self,
                  timing: VGATiming, # VGATiming class
                  xadjustf=0, # adjust -3..3 if no picture
@@ -75,7 +79,7 @@ class CamTest(Elaboratable):
 
     def elaborate(self, platform):
         # Constants
-        pixel_f     = self.timing.pixel_freq
+        pixel_f           = self.timing.pixel_freq
         hsync_front_porch = self.timing.h_front_porch
         hsync_pulse_width = self.timing.h_sync_pulse
         hsync_back_porch  = self.timing.h_back_porch
@@ -83,13 +87,24 @@ class CamTest(Elaboratable):
         vsync_pulse_width = self.timing.v_sync_pulse
         vsync_back_porch  = self.timing.v_back_porch
 
-        clk25 = platform.request("clk25")
-        sw =  Cat([platform.request("switch",i) for i in range(4)])
-        led8_2 = platform.request("led8_2")
+        # Pins
+        clk25   = platform.request("clk25")
+        ov7670  = platform.request("ov7670")
+        led     = [platform.request("led", i) for i in range(8)]
+        leds    = Cat([i.o for i in led])
+        led8_2  = platform.request("led8_2")
         leds8_2 = Cat([led8_2.leds[i] for i in range(8)])
-        led8_3 = platform.request("led8_3")
+        led8_3  = platform.request("led8_3")
         leds8_3 = Cat([led8_3.leds[i] for i in range(8)])
-        leds16 = Cat(leds8_3, leds8_2)
+        leds16  = Cat(leds8_3, leds8_2)
+        btn1    = platform.request("button_fire", 0)
+        btn2    = platform.request("button_fire", 1)
+        up      = platform.request("button_up", 0)
+        down    = platform.request("button_down", 0)
+        pwr     = platform.request("button_pwr", 0)
+        left    = platform.request("button_left", 0)
+        right   = platform.request("button_right", 0)
+        sw      =  Cat([platform.request("switch",i) for i in range(4)])
 
         m = Module()
         
@@ -103,21 +118,6 @@ class CamTest(Elaboratable):
         pll.create_clkout(cd_sync,  platform.default_clk_frequency)
         pll.create_clkout(cd_pixel, pixel_f)
         pll.create_clkout(cd_shift, pixel_f * 5.0 * (1.0 if self.ddr else 2.0))
-
-        platform.add_clock_constraint(cd_sync.clk,  platform.default_clk_frequency)
-        platform.add_clock_constraint(cd_pixel.clk, pixel_f)
-        platform.add_clock_constraint(cd_shift.clk, pixel_f * 5.0 * (1.0 if self.ddr else 2.0))
-
-        led = [platform.request("led", i) for i in range(8)]
-        leds = Cat([i.o for i in led])
-        ov7670 = platform.request("ov7670")
-        btn1 = platform.request("button_fire", 0)
-        btn2 = platform.request("button_fire", 1)
-        up = platform.request("button_up", 0)
-        down = platform.request("button_down", 0)
-        pwr = platform.request("button_pwr", 0)
-        left = platform.request("button_left", 0)
-        right = platform.request("button_right", 0)
 
         # Add CamRead submodule
         camread = CamRead()
@@ -149,38 +149,117 @@ class CamTest(Elaboratable):
         m.submodules.r = r = buffer.read_port()
         m.submodules.w = w = buffer.write_port()
 
-        # Buttons and val
-        debup = Debouncer()
-        m.submodules.debup = debup
-
-        val = Signal(unsigned(4), reset=0)
-        up_down = Signal()
-
-        debdown = Debouncer()
-        m.submodules.debdown = debdown
-
-        debres = Debouncer()
-        m.submodules.debres = debres
-
+        # Buttons 
+        m.submodules.debup = debup = Debouncer()
+        m.submodules.debdown = debdown = Debouncer()
+        m.submodules.debres = debres = Debouncer()
         m.submodules.debosd = debosd = Debouncer()
+        m.submodules.debsel = debsel = Debouncer()
+        m.submodules.debsnap = debsnap = Debouncer()
 
         m.d.comb += [
             debup.btn.eq(up),
             debdown.btn.eq(down),
             debres.btn.eq(btn2),
-            debosd.btn.eq(pwr)
+            debosd.btn.eq(pwr),
+            debsel.btn.eq(right),
+            debsnap.btn.eq(left)
         ]
 
+        # Image processing options
+        x_flip   = Signal(reset=1)
+        y_flip   = Signal(reset=0)
+        mono     = Signal(reset=0)
+        invert   = Signal(reset=0)
+        gamma    = Signal(reset=0)
+        border   = Signal(reset=1)
+        grid     = Signal(reset=0)
+
+        brightness  = Signal(signed(7), reset=0)
+        redness     = Signal(unsigned(7), reset=18)
+        greenness   = Signal(unsigned(7), reset=12)
+        blueness    = Signal(unsigned(7), reset=16)
+        sharpness   = Signal(unsigned(4), reset=0)
+
+        osd_val = Signal(4)
+        osd_on = Signal()
+        osd_sel = Signal()
+        snap    = Signal()
+        frozen  = Signal()
+
+        with m.If(debosd.btn_down):
+            m.d.sync += osd_on.eq(~osd_on)
+        with m.If(debsel.btn_down):
+            m.d.sync += osd_sel.eq(~osd_sel)
+
+        with m.If(debsnap.btn_down):
+            m.d.sync += [
+                snap.eq(~snap),
+                frozen.eq(0)
+            ]
+
+        # OSD control
         with m.If(debup.btn_down):
-            m.d.sync += val.eq(val+1)
+            with m.If(osd_on & ~osd_sel):
+                m.d.sync += osd_val.eq(Mux(osd_val == 0, 11, osd_val-1))
+            with m.Elif(osd_sel):
+                with m.Switch(osd_val):
+                    with m.Case(0): # brightness
+                        m.d.sync += brightness.eq(brightness+1)
+                    with m.Case(1): # redness
+                        m.d.sync += redness.eq(redness+1)
+                    with m.Case(2): # greenness
+                        m.d.sync += greenness.eq(greenness+1)
+                    with m.Case(3): # blueness
+                        m.d.sync += blueness.eq(blueness+1)
+                    with m.Case(4): # mono
+                        m.d.sync += mono.eq(1)
+                    with m.Case(5): # x flip
+                        m.d.sync += x_flip.eq(1)
+                    with m.Case(6): # y flip
+                        m.d.sync += y_flip.eq(1)
+                    with m.Case(7): # border
+                        m.d.sync += border.eq(1)
+                    with m.Case(8): # sharpness
+                        m.d.sync += sharpness.eq(sharpness+1)
+                    with m.Case(9): # invert
+                        m.d.sync += invert.eq(1)
+                    with m.Case(10): # grid
+                        m.d.sync += grid.eq(1)
+                    with m.Case(11): # filter
+                        m.d.sync += []
 
         with m.If(debdown.btn_down):
-            m.d.sync += val.eq(val-1)
+            with m.If(osd_on & ~osd_sel):
+                m.d.sync += osd_val.eq(Mux(osd_val == 11, 0, osd_val+1))
+            with m.Elif(osd_sel):
+                with m.Switch(osd_val):
+                    with m.Case(0): # brightness
+                        m.d.sync += brightness.eq(brightness-1)
+                    with m.Case(1): # redness
+                        m.d.sync += redness.eq(redness-1)
+                    with m.Case(2): # greenness
+                        m.d.sync += greenness.eq(greenness-1)
+                    with m.Case(3): # blueness
+                        m.d.sync += blueness.eq(blueness-1)
+                    with m.Case(4): # mono
+                        m.d.sync += mono.eq(0)
+                    with m.Case(5): # x flip
+                        m.d.sync += x_flip.eq(0)
+                    with m.Case(6): # y flip
+                        m.d.sync += y_flip.eq(0)
+                    with m.Case(7): # border
+                        m.d.sync += border.eq(0)
+                    with m.Case(8): # sharpness
+                        m.d.sync += sharpness.eq(sharpness-1)
+                    with m.Case(9): # invert
+                        m.d.sync += invert.eq(0)
+                    with m.Case(10): # grid
+                        m.d.sync += grid.eq(0)
+                    with m.Case(11): # filter
+                        m.d.sync += []
 
-        with m.If(debres.btn_down):
-            m.d.sync += val.eq(0)
-
-        # Image stream
+        # Image global stats
         max_r = Signal(5)
         max_g = Signal(6)
         max_b = Signal(5)
@@ -189,36 +268,49 @@ class CamTest(Elaboratable):
         avg_g = Signal(22)
         avg_b = Signal(21)
 
+        a_r   = Signal(5)
+        a_g   = Signal(6)
+        a_b   = Signal(5)
+
         frames = Signal(6)
 
-        ims = ImageConv()
-        m.submodules.image_stream = ims
+        # Image convolution
+        m.submodules.ims = ims = ImageConv()
 
+        p_r = Signal(9)
+        p_g = Signal(10)
+        p_b = Signal(9)
+        
+        # Sync the fifo with the camera
         sync_fifo = Signal(reset=0)
         with m.If((camread.col == 639) & (camread.row == 0)):
             m.d.sync += sync_fifo.eq(1)
 
-        p_r = Signal(8)
-        p_g = Signal(9)
-        p_b = Signal(8)
-        
         # Connect fifo and ims
         m.d.comb += [
             fifo.w_en.eq(camread.pixel_valid & camread.col[0] & sync_fifo), # Only write every other pixel
             fifo.w_data.eq(camread.pixel_data), 
             fifo.r_en.eq(fifo.r_rdy & ~ims.o_stall),
             ims.i_valid.eq(fifo.r_rdy),
-            p_r.eq(fifo.r_data[11:] * 9),
-            ims.i_r.eq(p_r[3:]),
-            p_g.eq(fifo.r_data[5:11] * 6),
-            ims.i_g.eq(p_g[3:]),
-            p_b.eq(fifo.r_data[0:5] * 8),
-            ims.i_b.eq(p_b[3:]),
-            ims.sel.eq(val),
-            ims.x_flip.eq(sw[0]),
-            ims.y_flip.eq(sw[1]),
-            ims.mono.eq(sw[2])
+            p_r.eq(fifo.r_data[11:] * (redness + brightness)),
+            ims.i_r.eq(p_r[4:]),
+            p_g.eq(fifo.r_data[5:11] * (greenness + brightness)),
+            ims.i_g.eq(p_g[4:]),
+            p_b.eq(fifo.r_data[0:5] * (blueness + brightness)),
+            ims.i_b.eq(p_b[4:]),
+            ims.sel.eq(sharpness),
+            ims.x_flip.eq(x_flip),
+            ims.y_flip.eq(y_flip),
+            ims.mono.eq(mono),
+            ims.invert.eq(invert),
+            ims.avg_r.eq(a_r),
+            ims.avg_g.eq(a_g),
+            ims.avg_b.eq(a_b)
         ]
+
+        # Take a snapshot
+        with m.If(ims.frame_done & snap):
+            m.d.sync += frozen.eq(1)
 
         # Calculate maximum for each color, each frame
         with m.If(ims.i_r > max_r):
@@ -246,13 +338,16 @@ class CamTest(Elaboratable):
                 max_b.eq(0),
                 avg_r.eq(0),
                 avg_g.eq(0),
-                avg_b.eq(0)
+                avg_b.eq(0),
+                a_r.eq(avg_r[16:]),
+                a_g.eq(avg_g[16:]),
+                a_b.eq(avg_b[16:]),
             ]
             with m.If(frames == 0):
                 m.d.sync += leds16.eq(Cat([avg_b[16:],avg_g[16:],avg_r[16:]]))
 
         # Show value on leds
-        m.d.comb += leds.eq(val)
+        m.d.comb += leds.eq(osd_val)
 
         # VGA signal generator.
         vga_r = Signal(8)
@@ -261,8 +356,6 @@ class CamTest(Elaboratable):
         vga_hsync = Signal()
         vga_vsync = Signal()
         vga_blank = Signal()
-
-        psum = Signal(8)
 
         # Add VGA generator
         m.submodules.vga = vga = VGA(
@@ -280,7 +373,7 @@ class CamTest(Elaboratable):
 
         # Connect frame buffer
         m.d.comb += [
-            w.en.eq(ims.o_valid),
+            w.en.eq(ims.o_valid & ~frozen),
             w.addr.eq(ims.o_y * 320 + ims.o_x),
             w.data.eq(Cat(ims.o_b, ims.o_g, ims.o_r)),
             r.addr.eq(vga.o_beam_y * 320 + vga.o_beam_x[1:])
@@ -289,10 +382,6 @@ class CamTest(Elaboratable):
         # OSD
         m.submodules.osd = osd = OSD()
 
-        osd_on = Signal()
-        with m.If(debosd.btn_down):
-            m.d.sync += osd_on.eq(~osd_on)
-
         m.d.comb += [
             osd.x.eq(vga.o_beam_x),
             osd.y.eq(vga.o_beam_y),
@@ -300,8 +389,10 @@ class CamTest(Elaboratable):
             osd.i_g.eq(Cat(Const(0, unsigned(2)), r.data[5:11])),
             osd.i_b.eq(Cat(Const(0, unsigned(3)), r.data[0:5])),
             osd.on.eq(osd_on),
-            osd.osd_val.eq(Mux(val > 11, val - 12, val)),
-            osd.sel.eq(0),
+            osd.osd_val.eq(osd_val),
+            osd.sel.eq(osd_sel),
+            osd.grid.eq(grid),
+            osd.border.eq(border)
         ]
 
         # Generate VGA signals
@@ -389,8 +480,11 @@ if __name__ == "__main__":
     platform = variants[args.variant]()
 
     m = Module()
-    m.submodules.top = top = CamTest(timing=vga_timings['640x480@60Hz'])
 
+    # Add the top module
+    m.submodules.top = top = Camera(timing=vga_timings['640x480@60Hz'])
+
+    # Add OV7670 and LED Pmod resurces
     platform.add_resources(ov7670_pmod)
     platform.add_resources(pmod_led8_2)
     platform.add_resources(pmod_led8_3)

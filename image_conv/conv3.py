@@ -23,6 +23,7 @@ class Conv3(Elaboratable):
         self.o_stall   = Signal()
         self.o_x       = Signal(bits_for(w), reset=self.w - 1)
         self.o_y       = Signal(bits_for(h), reset=self.h - 1)
+        self.frame_done = Signal()
 
     def elaborate(self, platform):
         m = Module()
@@ -83,7 +84,10 @@ class Conv3(Elaboratable):
         ]
 
         # Pixel not valid by default
-        m.d.sync += self.o_valid.eq(0)
+        m.d.sync += [
+            self.o_valid.eq(0),
+            self.frame_done.eq(0)
+        ]
 
         # New pixel value
         n_p = Signal(self.dw + self.sh + 1)
@@ -123,7 +127,8 @@ class Conv3(Elaboratable):
                     self.o_stall.eq(0),
                     started.eq(0),
                     self.o_x.eq(self.w - 1),
-                    self.o_y.eq(self.h - 1)
+                    self.o_y.eq(self.h - 1),
+                    self.frame_done.eq(1)
                 ]
 
             # Pixel generation starts on row 1, column 1

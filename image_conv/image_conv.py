@@ -18,6 +18,10 @@ class ImageConv(Elaboratable):
         self.x_flip      = Signal()
         self.y_flip      = Signal()
         self.mono        = Signal()
+        self.invert      = Signal()
+        self.avg_r       = Signal(5)
+        self.avg_g       = Signal(6)
+        self.avg_b       = Signal(5)
 
         # Outputs
         self.o_stall     = Signal()
@@ -27,6 +31,7 @@ class ImageConv(Elaboratable):
         self.o_r         = Signal(5)
         self.o_g         = Signal(6)
         self.o_b         = Signal(5)
+        self.frame_done  = Signal()
 
     def elaborate(self, platform):
         m = Module()
@@ -42,9 +47,9 @@ class ImageConv(Elaboratable):
             with m.If(self.mono):
                 m.d.comb += [
                     p_s.eq(c_r + c_g + c_b),
-                    self.o_r.eq(p_s[2:]),
-                    self.o_g.eq(p_s[1:]),
-                    self.o_b.eq(p_s[2:])
+                    self.o_r.eq(Mux(self.invert, ~p_s[2:], p_s[2:])),
+                    self.o_g.eq(Mux(self.invert, ~p_s[1:], p_s[1:])),
+                    self.o_b.eq(Mux(self.invert, ~p_s[2:], p_s[2:]))
                 ]
             with m.Else():
                 m.d.comb += [
@@ -149,7 +154,8 @@ class ImageConv(Elaboratable):
             self.o_stall.eq(ident_r.o_stall),
             self.o_valid.eq(ident_r.i_valid),
             self.o_x.eq(Mux(self.x_flip, self.res_x - 1 - ident_r.o_x, ident_r.o_x)),
-            self.o_y.eq(Mux(self.y_flip, self.res_y - 1 - ident_r.o_y, ident_r.o_y))
+            self.o_y.eq(Mux(self.y_flip, self.res_y - 1 - ident_r.o_y, ident_r.o_y)),
+            self.frame_done.eq(ident_r.frame_done)
         ]
 
         # Select the required convolution
@@ -164,6 +170,8 @@ class ImageConv(Elaboratable):
                 select(edge_r.o_p, edge_g.o_p, edge_b.o_p)
             with m.Case(5):
                 select(box_r.o_p, box_g.o_p, box_b.o_p)
+            with m.Case(6):
+                select(self.avg_r, self.avg_g, self.avg_b)
             with m.Default():
                 select(ident_r.o_p, ident_g.o_p, ident_b.o_p)
 
