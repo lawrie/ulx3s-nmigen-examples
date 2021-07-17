@@ -5,6 +5,7 @@ from nmigen.build import *
 from nmigen_boards.ulx3s import *
 
 from nmigen.lib.fifo import SyncFIFOBuffered
+from nmigen_stdio.serial import *
 
 from camread import *
 from camconfig import *
@@ -105,6 +106,8 @@ class Camera(Elaboratable):
         left    = platform.request("button_left", 0)
         right   = platform.request("button_right", 0)
         sw      =  Cat([platform.request("switch",i) for i in range(4)])
+        uart    = platform.request("uart")
+        divisor = int(platform.default_clk_frequency // 115200)
 
         m = Module()
         
@@ -140,6 +143,9 @@ class Camera(Elaboratable):
             camread.vsync.eq(ov7670.cam_VSYNC),
             camread.p_clock.eq(ov7670.cam_PCLK)
         ]
+
+        # Create the uart
+        m.submodules.serial = serial = AsyncSerial(divisor=divisor, pins=uart)
 
         # Input fifo
         m.submodules.fifo = fifo = SyncFIFOBuffered(width=16,depth=1024)
@@ -186,17 +192,15 @@ class Camera(Elaboratable):
         osd_sel = Signal()
         snap    = Signal()
         frozen  = Signal()
+        writing = Signal()
+        written = Signal()
+        w_addr  = Signal(18)
+        byte    = Signal()
 
         with m.If(debosd.btn_down):
             m.d.sync += osd_on.eq(~osd_on)
         with m.If(debsel.btn_down):
             m.d.sync += osd_sel.eq(~osd_sel)
-
-        with m.If(debsnap.btn_down):
-            m.d.sync += [
-                snap.eq(~snap),
-                frozen.eq(0)
-            ]
 
         # OSD control
         with m.If(debup.btn_down):
@@ -309,8 +313,35 @@ class Camera(Elaboratable):
         ]
 
         # Take a snapshot
+        with m.If(debsnap.btn_down):
+            m.d.sync += [
+                snap.eq(~snap),
+                frozen.eq(0),
+                w_addr.eq(0),
+                written.eq(0),
+                byte.eq(0)
+            ]
+
         with m.If(ims.frame_done & snap):
             m.d.sync += frozen.eq(1)
+            with m.If(~written):
+                m.d.sync += writing.eq(1)
+
+        m.d.comb += [
+            serial.tx.data.eq(Mux(byte, r.data[8:], r.data[:8])),
+            serial.tx.ack.eq(writing)
+        ]
+
+        with m.If(writing):
+            with m.If(w_addr == 320 * 480):
+                m.d.sync += [
+                    writing.eq(0),
+                    written.eq(1)
+                ]
+            with m.Elif(serial.tx.ack & serial.tx.rdy):
+                m.d.sync += byte.eq(~byte)
+                with m.If(byte):
+                    m.d.sync += w_addr.eq(w_addr+1)
 
         # Calculate maximum for each color, each frame
         with m.If(ims.i_r > max_r):
@@ -343,8 +374,10 @@ class Camera(Elaboratable):
                 a_g.eq(avg_g[16:]),
                 a_b.eq(avg_b[16:]),
             ]
-            with m.If(frames == 0):
-                m.d.sync += leds16.eq(Cat([avg_b[16:],avg_g[16:],avg_r[16:]]))
+            #with m.If(frames == 0):
+                #m.d.sync += leds16.eq(Cat([avg_b[16:],avg_g[16:],avg_r[16:]]))
+
+        m.d.comb += leds16.eq(w_addr)
 
         # Show value on leds
         m.d.comb += leds.eq(osd_val)
@@ -376,7 +409,7 @@ class Camera(Elaboratable):
             w.en.eq(ims.o_valid & ~frozen),
             w.addr.eq(ims.o_y * 320 + ims.o_x),
             w.data.eq(Cat(ims.o_b, ims.o_g, ims.o_r)),
-            r.addr.eq(vga.o_beam_y * 320 + vga.o_beam_x[1:])
+            r.addr.eq(Mux(writing, w_addr, vga.o_beam_y * 320 + vga.o_beam_x[1:]))
         ]
 
         # OSD
@@ -426,6 +459,7 @@ class Camera(Elaboratable):
             tmds[0].eq(vga2dvid.o_blue),
         ]
 
+        # GPDI pins
         if (self.ddr):
             # Vendor specific DDR modules.
             # Convert SDR 2-bit input to DDR clocked 1-bit output (single-ended)
